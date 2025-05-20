@@ -35,9 +35,17 @@ func createTestArchive(t *testing.T, files map[string]string, dirs []string, arc
 		tw = tar.NewWriter(buf)
 		closer = tw // tar.Writer also needs to be Close()d
 	}
-	defer closer.Close() // Close either gzip.Writer or tar.Writer
-	if tw != closer {    // If using gzip, close tar.Writer separately
-		defer tw.Close()
+	defer func() {
+		if err := closer.Close(); err != nil {
+			t.Logf("Failed to close writer: %v", err)
+		}
+	}() // Close either gzip.Writer or tar.Writer
+	if tw != closer { // If using gzip, close tar.Writer separately
+		defer func() {
+			if err := tw.Close(); err != nil {
+				t.Logf("Failed to close tar writer: %v", err)
+			}
+		}()
 	}
 
 	now := time.Now()
@@ -79,7 +87,11 @@ func TestUploadHandler_Success_Tar(t *testing.T) {
 
 	tempDir, err := os.MkdirTemp("", "test-deploy-tar-*")
 	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp directory %s: %v", tempDir, err)
+		}
+	}()
 
 	filesToArchive := map[string]string{
 		"file1.txt":        "content of file1",
@@ -128,7 +140,11 @@ func TestUploadHandler_Success_TarGz(t *testing.T) {
 
 	tempDir, err := os.MkdirTemp("", "test-deploy-tgz-*")
 	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp directory %s: %v", tempDir, err)
+		}
+	}()
 
 	filesToArchive := map[string]string{
 		"fileA.txt":        "content of fileA",
@@ -200,7 +216,11 @@ func TestUploadHandler_NoTarfile(t *testing.T) {
 
 	tempDir, err := os.MkdirTemp("", "test-deploy-notar-*")
 	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp directory %s: %v", tempDir, err)
+		}
+	}()
 
 	body := new(bytes.Buffer)
 	writer := multipart.NewWriter(body)
@@ -227,7 +247,11 @@ func TestUploadHandler_InvalidGzip(t *testing.T) {
 
 	tempDir, err := os.MkdirTemp("", "test-deploy-badgzip-*")
 	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp directory %s: %v", tempDir, err)
+		}
+	}()
 
 	body := new(bytes.Buffer)
 	writer := multipart.NewWriter(body)
@@ -257,7 +281,11 @@ func TestUploadHandler_PathTraversalAttempt(t *testing.T) {
 
 	tempDir, err := os.MkdirTemp("", "test-deploy-traversal-*")
 	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp directory %s: %v", tempDir, err)
+		}
+	}()
 
 	// Create a tar with a path traversal attempt
 	// Note: filepath.Join on the server will clean this, but the check is for after cleaning

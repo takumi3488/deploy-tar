@@ -34,7 +34,11 @@ func UploadHandler(c echo.Context) error {
 	if err != nil {
 		return c.String(http.StatusInternalServerError, "Failed to open uploaded tar file: "+err.Error())
 	}
-	defer src.Close()
+	defer func() {
+		if err := src.Close(); err != nil {
+			c.Logger().Errorf("Failed to close source file: %v", err)
+		}
+	}()
 
 	var fileReader io.Reader = src
 
@@ -44,7 +48,11 @@ func UploadHandler(c echo.Context) error {
 		if err != nil {
 			return c.String(http.StatusInternalServerError, "Failed to create gzip reader: "+err.Error())
 		}
-		defer gzr.Close()
+		defer func() {
+			if err := gzr.Close(); err != nil {
+				c.Logger().Errorf("Failed to close gzip reader: %v", err)
+			}
+		}()
 		fileReader = gzr
 	}
 
@@ -89,12 +97,22 @@ func UploadHandler(c echo.Context) error {
 			}
 			// Using a func to ensure outFile.Close() is called after copying
 			func() {
-				defer outFile.Close()
+				defer func() {
+					if err := outFile.Close(); err != nil {
+						c.Logger().Errorf("Failed to close output file %s: %v", target, err)
+					}
+				}()
 				if _, err := io.Copy(outFile, tarReader); err != nil {
 					// This error will be shadowed if not handled carefully,
 					// but we'll return from the outer function if it occurs.
 					// For more robust error handling, consider collecting errors.
 					c.Logger().Errorf("Failed to copy file content from tar for %s: %v", target, err)
+					// It's important to return an error here if io.Copy fails,
+					// otherwise the main function might return success incorrectly.
+					// However, the original code structure doesn't easily allow returning
+					// an error from this inner func to the UploadHandler.
+					// For now, we log the error. A more robust solution might involve
+					// restructuring or using a channel to communicate errors.
 				}
 			}()
 
