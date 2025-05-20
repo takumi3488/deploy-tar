@@ -323,3 +323,197 @@ func TestUploadHandler_PathTraversalAttempt(t *testing.T) {
 	_, err = os.Stat(filepath.Join(tempDir, "evil.txt")) // Check inside tempDir
 	assert.True(t, os.IsNotExist(err), "File should not be created inside tempDir due to path cleaning before check")
 }
+
+func TestUploadHandler_WithPathPrefix_AllowedPath(t *testing.T) {
+	e := echo.New()
+	pathPrefix := "/allowed/prefix"
+	if err := os.Setenv("PATH_PREFIX", pathPrefix); err != nil {
+		t.Fatalf("failed to set env PATH_PREFIX: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("PATH_PREFIX"); err != nil {
+			t.Fatalf("failed to unset env PATH_PREFIX: %v", err)
+		}
+	}()
+
+	tempDir, err := os.MkdirTemp("", "test-deploy-tar-prefix-*")
+	assert.NoError(t, err)
+
+	formPath := filepath.Join(tempDir, pathPrefix, "data") // e.g., /tmp/test-xxxx/allowed/prefix/data
+	err = os.MkdirAll(filepath.Dir(formPath), 0755)         // Ensure parent of formPath exists
+	assert.NoError(t, err)
+
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp directory %s: %v", tempDir, err)
+		}
+	}()
+
+	filesToArchive := map[string]string{
+		"file1.txt":        "content of file1",
+		"subdir/file2.txt": "content of file2",
+	}
+	dirsToArchive := []string{"subdir/"}
+	archiveName := "test_allowed.tar.gz"
+	archiveContent := createTestArchive(t, filesToArchive, dirsToArchive, archiveName)
+
+	body := new(bytes.Buffer)
+	writer := multipart.NewWriter(body)
+	part, err := writer.CreateFormFile("tarfile", archiveName)
+	assert.NoError(t, err)
+	_, err = io.Copy(part, archiveContent)
+	assert.NoError(t, err)
+	// The 'path' field in the form should be the actual destination path
+	// that starts with PATH_PREFIX.
+	err = writer.WriteField("path", formPath)
+	assert.NoError(t, err)
+	err = writer.Close()
+	assert.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPost, "/", body)
+	req.Header.Set(echo.HeaderContentType, writer.FormDataContentType())
+	rec := httptest.NewRecorder()
+
+	c := e.NewContext(req, rec)
+	if assert.NoError(t, UploadHandler(c)) {
+		assert.Equal(t, http.StatusOK, rec.Code)
+		assert.Equal(t, "Tar file extracted successfully", rec.Body.String())
+	}
+
+	// Verify extracted files in the target directory (formPath)
+	content1, err := os.ReadFile(filepath.Join(formPath, "file1.txt"))
+	assert.NoError(t, err)
+	assert.Equal(t, "content of file1", string(content1))
+
+	content2, err := os.ReadFile(filepath.Join(formPath, "subdir/file2.txt"))
+	assert.NoError(t, err)
+	assert.Equal(t, "content of file2", string(content2))
+
+	_, err = os.Stat(filepath.Join(formPath, "subdir"))
+	assert.NoError(t, err, "Subdirectory should exist in the target path")
+}
+
+func TestUploadHandler_WithPathPrefix_PathExactlyPrefix(t *testing.T) {
+	e := echo.New()
+	pathPrefix := "/allowed/exact_prefix" // Use a distinct prefix for this test
+	if err := os.Setenv("PATH_PREFIX", pathPrefix); err != nil {
+		t.Fatalf("failed to set env PATH_PREFIX: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("PATH_PREFIX"); err != nil {
+			t.Fatalf("failed to unset env PATH_PREFIX: %v", err)
+		}
+	}()
+
+	// The 'path' form value will be exactly PATH_PREFIX.
+	// For the test, this path must be writable. We use tempDir as a base.
+	// So, the formPath will be filepath.Join(tempDir, pathPrefix)
+	// This implies PATH_PREFIX is treated as a directory.
+	baseDir, err := os.MkdirTemp("", "test-deploy-tar-exact-prefix-base-*")
+	assert.NoError(t, err)
+	defer func() {
+		if err := os.RemoveAll(baseDir); err != nil {
+			t.Logf("Failed to remove temp directory %s: %v", baseDir, err)
+		}
+	}()
+
+	formPath := filepath.Join(baseDir, pathPrefix) // e.g. /tmp/test-base-xxxx/allowed/exact_prefix
+	// We need to create `formPath` because files will be extracted *into* it.
+	err = os.MkdirAll(formPath, 0755)
+	assert.NoError(t, err)
+
+
+	filesToArchive := map[string]string{
+		"rootfile.txt": "content at root of archive",
+	}
+	archiveName := "test_exact_match.tar"
+	archiveContent := createTestArchive(t, filesToArchive, nil, archiveName)
+
+	body := new(bytes.Buffer)
+	writer := multipart.NewWriter(body)
+	part, err := writer.CreateFormFile("tarfile", archiveName)
+	assert.NoError(t, err)
+	_, err = io.Copy(part, archiveContent)
+	assert.NoError(t, err)
+	err = writer.WriteField("path", formPath) // Request path is exactly the prefix (made absolute for test)
+	assert.NoError(t, err)
+	err = writer.Close()
+	assert.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPost, "/", body)
+	req.Header.Set(echo.HeaderContentType, writer.FormDataContentType())
+	rec := httptest.NewRecorder()
+
+	c := e.NewContext(req, rec)
+	if assert.NoError(t, UploadHandler(c)) {
+		assert.Equal(t, http.StatusOK, rec.Code)
+		assert.Equal(t, "Tar file extracted successfully", rec.Body.String())
+	}
+
+	// Verify extracted file in the formPath (which is the prefix itself)
+	content, err := os.ReadFile(filepath.Join(formPath, "rootfile.txt"))
+	assert.NoError(t, err)
+	assert.Equal(t, "content at root of archive", string(content))
+}
+
+
+func TestUploadHandler_WithPathPrefix_DisallowedPath(t *testing.T) {
+	e := echo.New()
+	if err := os.Setenv("PATH_PREFIX", "/allowed/prefix"); err != nil {
+		t.Fatalf("failed to set env PATH_PREFIX: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("PATH_PREFIX"); err != nil {
+			t.Fatalf("failed to unset env PATH_PREFIX: %v", err)
+		}
+	}()
+
+	tempDir, err := os.MkdirTemp("", "test-deploy-tar-prefix-disallowed-*")
+	assert.NoError(t, err)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp directory %s: %v", tempDir, err)
+		}
+	}()
+
+	// This path does not start with PATH_PREFIX
+	disallowedPath := filepath.Join(tempDir, "disallowed", "path")
+	// Create the directory, as the handler might attempt to access it before validation failure in some scenarios,
+	// though for prefix validation, it should fail before filesystem access for extraction.
+	err = os.MkdirAll(disallowedPath, 0755)
+	assert.NoError(t, err)
+
+	archiveContent := createTestArchive(t, map[string]string{"dummy.txt": "data"}, nil, "dummy.tar")
+
+	body := new(bytes.Buffer)
+	writer := multipart.NewWriter(body)
+	part, err := writer.CreateFormFile("tarfile", "dummy.tar")
+	assert.NoError(t, err)
+	_, err = io.Copy(part, archiveContent)
+	assert.NoError(t, err)
+	err = writer.WriteField("path", disallowedPath) // Path that does NOT start with PATH_PREFIX
+	assert.NoError(t, err)
+	err = writer.Close()
+	assert.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPost, "/", body)
+	req.Header.Set(echo.HeaderContentType, writer.FormDataContentType())
+	rec := httptest.NewRecorder()
+
+	c := e.NewContext(req, rec)
+	err = UploadHandler(c) // Expect an error handled by Echo's HTTPErrorHandler
+
+	// Check if the error is the specific one we expect from path validation
+	if httpErr, ok := err.(*echo.HTTPError); ok {
+		assert.Equal(t, http.StatusBadRequest, httpErr.Code)
+		assert.Equal(t, "Path is not allowed", httpErr.Message)
+	} else {
+		// If no error was returned by the handler (it wrote response directly)
+		assert.Equal(t, http.StatusBadRequest, rec.Code)
+		assert.JSONEq(t, `{"message":"Path is not allowed"}`, rec.Body.String())
+	}
+
+	// Ensure no files were extracted
+	_, statErr := os.Stat(filepath.Join(disallowedPath, "dummy.txt"))
+	assert.True(t, os.IsNotExist(statErr), "File should not be extracted to a disallowed path")
+}
