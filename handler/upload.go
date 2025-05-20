@@ -51,7 +51,7 @@ func UploadHandler(c echo.Context) error {
 		}
 		basePathComponents = filterEmpty(basePathComponents)
 		pathPrefixComponents = filterEmpty(pathPrefixComponents)
-		
+
 		allowed := false
 		if len(pathPrefixComponents) == 0 { // Empty prefix might mean allow all or disallow all based on policy. Assume allow for now if prefix is effectively empty.
 			allowed = true
@@ -73,7 +73,6 @@ func UploadHandler(c echo.Context) error {
 				}
 			}
 		}
-
 
 		if !allowed {
 			c.Logger().Infof(

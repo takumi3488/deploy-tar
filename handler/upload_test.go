@@ -340,7 +340,7 @@ func TestUploadHandler_WithPathPrefix_AllowedPath(t *testing.T) {
 	assert.NoError(t, err)
 
 	formPath := filepath.Join(tempDir, pathPrefix, "data") // e.g., /tmp/test-xxxx/allowed/prefix/data
-	err = os.MkdirAll(filepath.Dir(formPath), 0755)         // Ensure parent of formPath exists
+	err = os.MkdirAll(filepath.Dir(formPath), 0755)        // Ensure parent of formPath exists
 	assert.NoError(t, err)
 
 	defer func() {
@@ -422,7 +422,6 @@ func TestUploadHandler_WithPathPrefix_PathExactlyPrefix(t *testing.T) {
 	err = os.MkdirAll(formPath, 0755)
 	assert.NoError(t, err)
 
-
 	filesToArchive := map[string]string{
 		"rootfile.txt": "content at root of archive",
 	}
@@ -455,7 +454,6 @@ func TestUploadHandler_WithPathPrefix_PathExactlyPrefix(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "content at root of archive", string(content))
 }
-
 
 func TestUploadHandler_WithPathPrefix_DisallowedPath(t *testing.T) {
 	e := echo.New()
