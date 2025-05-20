@@ -53,6 +53,7 @@ func main() {
 
 	// Set up upload route
 	e.POST("/", handler.UploadHandler)
+	e.PUT("/", handler.UploadHandler)
 	// Start the server
 	e.Logger.Fatal(e.Start(":8080"))
 }

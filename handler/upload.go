@@ -127,6 +127,25 @@ func UploadHandler(c echo.Context) error {
 		fileReader = gzr
 	}
 
+	// Get request method
+	method := c.Request().Method
+	if method == http.MethodPut {
+		c.Logger().Infof("PUT request detected for path: %s. Removing existing directory.", baseDirPath)
+		// If PUT, remove existing directory
+		if err := os.RemoveAll(baseDirPath); err != nil {
+			c.Logger().Errorf("Failed to remove existing directory %s for PUT: %v", baseDirPath, err)
+			c.Error(echo.NewHTTPError(http.StatusInternalServerError, "Failed to remove existing directory for PUT: "+err.Error()))
+			return nil
+		}
+		// Recreate the directory
+		c.Logger().Infof("Recreating directory %s for PUT.", baseDirPath)
+		if err := os.MkdirAll(baseDirPath, 0755); err != nil {
+			c.Logger().Errorf("Failed to recreate base directory %s for PUT: %v", baseDirPath, err)
+			c.Error(echo.NewHTTPError(http.StatusInternalServerError, "Failed to recreate base directory for PUT: "+err.Error()))
+			return nil
+		}
+	}
+
 	tarReader := tar.NewReader(fileReader)
 
 	for {
