@@ -14,12 +14,78 @@ import (
 
 // uploadHandler processes a single tar file upload
 func UploadHandler(c echo.Context) error {
+	// Get PATH_PREFIX environment variable
+	pathPrefix := os.Getenv("PATH_PREFIX")
+
 	// Get the destination directory
 	baseDirPath := c.FormValue("path")
 	if baseDirPath == "" {
 		c.Error(echo.NewHTTPError(http.StatusBadRequest, "Destination directory not specified"))
 		return nil
 	}
+
+	// Validate path against PATH_PREFIX if it's set
+	if pathPrefix != "" {
+		// Clean both paths first.
+		// This handles redundant separators, ".", ".." etc.
+		// Normalize both paths using filepath.Clean.
+		// This handles ., .., and redundant slashes.
+		cleanedBasePath := filepath.Clean(baseDirPath)
+		cleanedPathPrefix := filepath.Clean(pathPrefix)
+
+		// Split paths into components. Handle leading/trailing slashes by cleaning first.
+		// filepath.ToSlash ensures consistent separators for splitting.
+		basePathComponents := strings.Split(filepath.ToSlash(cleanedBasePath), "/")
+		pathPrefixComponents := strings.Split(filepath.ToSlash(cleanedPathPrefix), "/")
+
+		// Remove empty strings that can result from leading/trailing slashes after split
+		// For example, "/a/b" -> ["", "a", "b"]. We care about actual path segments.
+		filterEmpty := func(s []string) []string {
+			var r []string
+			for _, str := range s {
+				if str != "" {
+					r = append(r, str)
+				}
+			}
+			return r
+		}
+		basePathComponents = filterEmpty(basePathComponents)
+		pathPrefixComponents = filterEmpty(pathPrefixComponents)
+
+		allowed := false
+		if len(pathPrefixComponents) == 0 { // Empty prefix might mean allow all or disallow all based on policy. Assume allow for now if prefix is effectively empty.
+			allowed = true
+		} else if len(basePathComponents) >= len(pathPrefixComponents) {
+			// Check if pathPrefixComponents is a subsequence of basePathComponents
+			// This means base path contains the prefix path structure.
+			// Example: base=["tmp", "foo", "bar", "data"], prefix=["foo", "bar"] -> true
+			for i := 0; i <= len(basePathComponents)-len(pathPrefixComponents); i++ {
+				match := true
+				for j := 0; j < len(pathPrefixComponents); j++ {
+					if basePathComponents[i+j] != pathPrefixComponents[j] {
+						match = false
+						break
+					}
+				}
+				if match {
+					allowed = true
+					break
+				}
+			}
+		}
+
+		if !allowed {
+			c.Logger().Infof(
+				"Path validation failed. BasePath: '%s' (components: %v), PathPrefix: '%s' (components: %v). Allowed: %t",
+				baseDirPath, basePathComponents,
+				pathPrefix, pathPrefixComponents,
+				allowed,
+			)
+			c.Error(echo.NewHTTPError(http.StatusBadRequest, "Path is not allowed"))
+			return nil
+		}
+	}
+
 	// Ensure the base directory exists
 	if err := os.MkdirAll(baseDirPath, 0755); err != nil {
 		c.Error(echo.NewHTTPError(http.StatusInternalServerError, "Failed to create base directory: "+err.Error()))

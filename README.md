@@ -16,6 +16,11 @@ A simple file upload server that provides a RESTful API to upload files to a spe
 docker run -p 8080:8080 -v /path/to/local/dir:/path/to/server/dir ghcr.io/takumi3488/simple-file-uploader:latest
 ```
 
+#### Environment Variables
+
+- `PATH_PREFIX`: (Optional) Restricts the directory paths where files can be uploaded. If set, uploaded files can only be extracted to paths starting with this prefix.
+  Example: `docker run -p 8080:8080 -v /path/to/local/dir:/path/to/server/dir -e PATH_PREFIX=/allowed/upload/path ghcr.io/takumi3488/simple-file-uploader:latest`
+
 ### API Endpoints
 
 #### File Upload
@@ -28,7 +33,7 @@ POST /upload # Upload and extract a tar file
 
 **Parameters**
 
-- `path`: Destination directory path where tar contents will be extracted (required)
+- `path`: Destination directory path where tar contents will be extracted (required). If the `PATH_PREFIX` environment variable is set, this path must start with the specified prefix, otherwise the request will be rejected.
 - `tarfile`: The tar file to upload (required)
 
 **Response**
