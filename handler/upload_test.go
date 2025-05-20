@@ -36,10 +36,9 @@ func createTestArchive(t *testing.T, files map[string]string, dirs []string, arc
 		closer = tw // tar.Writer also needs to be Close()d
 	}
 	defer closer.Close() // Close either gzip.Writer or tar.Writer
-	if tw != closer { // If using gzip, close tar.Writer separately
+	if tw != closer {    // If using gzip, close tar.Writer separately
 		defer tw.Close()
 	}
-
 
 	now := time.Now()
 	// Add directories
@@ -83,7 +82,7 @@ func TestUploadHandler_Success_Tar(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	filesToArchive := map[string]string{
-		"file1.txt":      "content of file1",
+		"file1.txt":        "content of file1",
 		"subdir/file2.txt": "content of file2",
 	}
 	dirsToArchive := []string{"subdir/"}
@@ -132,7 +131,7 @@ func TestUploadHandler_Success_TarGz(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	filesToArchive := map[string]string{
-		"fileA.txt": "content of fileA",
+		"fileA.txt":        "content of fileA",
 		"folder/fileB.log": "log content",
 	}
 	dirsToArchive := []string{"folder/"}
@@ -169,7 +168,6 @@ func TestUploadHandler_Success_TarGz(t *testing.T) {
 	assert.Equal(t, "log content", string(contentB))
 }
 
-
 func TestUploadHandler_NoPath(t *testing.T) {
 	e := echo.New()
 
@@ -190,7 +188,8 @@ func TestUploadHandler_NoPath(t *testing.T) {
 
 	c := e.NewContext(req, rec)
 	// We expect an error to be returned from the handler, so don't check NoError
-	UploadHandler(c) // Ignore the error and validate the response code and body
+	err = UploadHandler(c) // Ignore the error and validate the response code and body
+	assert.Error(t, err)
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 	assert.Equal(t, "Destination directory not specified", rec.Body.String())
@@ -216,7 +215,8 @@ func TestUploadHandler_NoTarfile(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	c := e.NewContext(req, rec)
-	UploadHandler(c) // Ignore the error and validate the response code and body
+	err = UploadHandler(c)
+	assert.Error(t, err)
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 	assert.True(t, strings.HasPrefix(rec.Body.String(), "Tar file not found in request"), "Expected tar file not found error")
@@ -245,7 +245,8 @@ func TestUploadHandler_InvalidGzip(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	c := e.NewContext(req, rec)
-	UploadHandler(c) // Ignore the error and validate the response code and body
+	err = UploadHandler(c)
+	assert.Error(t, err)
 
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 	assert.Equal(t, "Failed to create gzip reader: gzip: invalid header", rec.Body.String())
@@ -280,7 +281,8 @@ func TestUploadHandler_PathTraversalAttempt(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	c := e.NewContext(req, rec)
-	UploadHandler(c) // Ignore the error and validate the response code and body
+	err = UploadHandler(c) // Ignore the error and validate the response code and body
+	assert.Error(t, err)
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 	assert.Equal(t, "Invalid path in tar file (path traversal attempt)", rec.Body.String())

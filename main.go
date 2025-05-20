@@ -1,9 +1,9 @@
 package main
 
 import (
+	"deploytar/handler"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	"deploytar/handler"
 )
 
 func main() {
@@ -18,4 +18,3 @@ func main() {
 	// Start the server
 	e.Logger.Fatal(e.Start(":8080"))
 }
-
