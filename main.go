@@ -54,6 +54,9 @@ func main() {
 	// Set up upload route
 	e.POST("/", handler.UploadHandler)
 	e.PUT("/", handler.UploadHandler)
+
+	// Health check endpoint
+	e.GET("/healthz", handler.Healthz)
 	// Start the server
 	e.Logger.Fatal(e.Start(":8080"))
 }
