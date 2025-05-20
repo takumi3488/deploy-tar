@@ -35,9 +35,17 @@ func createTestArchive(t *testing.T, files map[string]string, dirs []string, arc
 		tw = tar.NewWriter(buf)
 		closer = tw // tar.Writer also needs to be Close()d
 	}
-	defer closer.Close() // Close either gzip.Writer or tar.Writer
-	if tw != closer {    // If using gzip, close tar.Writer separately
-		defer tw.Close()
+	defer func() {
+		if err := closer.Close(); err != nil {
+			t.Logf("Failed to close writer: %v", err)
+		}
+	}() // Close either gzip.Writer or tar.Writer
+	if tw != closer { // If using gzip, close tar.Writer separately
+		defer func() {
+			if err := tw.Close(); err != nil {
+				t.Logf("Failed to close tar writer: %v", err)
+			}
+		}()
 	}
 
 	now := time.Now()
@@ -79,7 +87,11 @@ func TestUploadHandler_Success_Tar(t *testing.T) {
 
 	tempDir, err := os.MkdirTemp("", "test-deploy-tar-*")
 	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp directory %s: %v", tempDir, err)
+		}
+	}()
 
 	filesToArchive := map[string]string{
 		"file1.txt":        "content of file1",
@@ -128,7 +140,11 @@ func TestUploadHandler_Success_TarGz(t *testing.T) {
 
 	tempDir, err := os.MkdirTemp("", "test-deploy-tgz-*")
 	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp directory %s: %v", tempDir, err)
+		}
+	}()
 
 	filesToArchive := map[string]string{
 		"fileA.txt":        "content of fileA",
@@ -187,12 +203,13 @@ func TestUploadHandler_NoPath(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	c := e.NewContext(req, rec)
-	// We expect an error to be returned from the handler, so don't check NoError
-	err = UploadHandler(c) // Ignore the error and validate the response code and body
-	assert.Error(t, err)
+	// Call the handler and expect an error
+	_ = UploadHandler(c) // The error is checked by the response code and body
+	// assert.Error(t, err) // c.Error() makes the handler return nil, error is checked by status code
 
+	// Assert the HTTP status code and response body
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
-	assert.Equal(t, "Destination directory not specified", rec.Body.String())
+	assert.Equal(t, "{\"message\":\"Destination directory not specified\"}\n", rec.Body.String())
 }
 
 func TestUploadHandler_NoTarfile(t *testing.T) {
@@ -200,7 +217,11 @@ func TestUploadHandler_NoTarfile(t *testing.T) {
 
 	tempDir, err := os.MkdirTemp("", "test-deploy-notar-*")
 	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp directory %s: %v", tempDir, err)
+		}
+	}()
 
 	body := new(bytes.Buffer)
 	writer := multipart.NewWriter(body)
@@ -215,11 +236,12 @@ func TestUploadHandler_NoTarfile(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	c := e.NewContext(req, rec)
-	err = UploadHandler(c)
-	assert.Error(t, err)
+	_ = UploadHandler(c) // The error is checked by the response code and body
+	// assert.Error(t, err) // c.Error() makes the handler return nil, error is checked by status code
 
+	// Assert the HTTP status code and response body
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
-	assert.True(t, strings.HasPrefix(rec.Body.String(), "Tar file not found in request"), "Expected tar file not found error")
+	assert.True(t, strings.HasPrefix(rec.Body.String(), "{\"message\":\"Tar file not found in request"), "Expected 'Tar file not found in request' error message")
 }
 
 func TestUploadHandler_InvalidGzip(t *testing.T) {
@@ -227,7 +249,11 @@ func TestUploadHandler_InvalidGzip(t *testing.T) {
 
 	tempDir, err := os.MkdirTemp("", "test-deploy-badgzip-*")
 	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp directory %s: %v", tempDir, err)
+		}
+	}()
 
 	body := new(bytes.Buffer)
 	writer := multipart.NewWriter(body)
@@ -245,11 +271,12 @@ func TestUploadHandler_InvalidGzip(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	c := e.NewContext(req, rec)
-	err = UploadHandler(c)
-	assert.Error(t, err)
+	_ = UploadHandler(c) // The error is checked by the response code and body
+	// assert.Error(t, err) // c.Error() makes the handler return nil, error is checked by status code
 
+	// Assert the HTTP status code and response body
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
-	assert.Equal(t, "Failed to create gzip reader: gzip: invalid header", rec.Body.String())
+	assert.Equal(t, "{\"message\":\"Failed to create gzip reader: gzip: invalid header\"}\n", rec.Body.String())
 }
 
 func TestUploadHandler_PathTraversalAttempt(t *testing.T) {
@@ -257,7 +284,11 @@ func TestUploadHandler_PathTraversalAttempt(t *testing.T) {
 
 	tempDir, err := os.MkdirTemp("", "test-deploy-traversal-*")
 	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp directory %s: %v", tempDir, err)
+		}
+	}()
 
 	// Create a tar with a path traversal attempt
 	// Note: filepath.Join on the server will clean this, but the check is for after cleaning
@@ -281,11 +312,13 @@ func TestUploadHandler_PathTraversalAttempt(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	c := e.NewContext(req, rec)
-	err = UploadHandler(c) // Ignore the error and validate the response code and body
-	assert.Error(t, err)
+	// Call the handler and expect an error
+	_ = UploadHandler(c)
+	// assert.Error(t, err) // c.Error() makes the handler return nil, error is checked by status code
 
+	// Assert the HTTP status code and response body
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
-	assert.Equal(t, "Invalid path in tar file (path traversal attempt)", rec.Body.String())
+	assert.Equal(t, "{\"message\":\"Invalid path in tar file (path traversal attempt)\"}\n", rec.Body.String())
 
 	_, err = os.Stat(filepath.Join(tempDir, "evil.txt")) // Check inside tempDir
 	assert.True(t, os.IsNotExist(err), "File should not be created inside tempDir due to path cleaning before check")
