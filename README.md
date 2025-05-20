@@ -20,6 +20,10 @@ docker run -p 8080:8080 -v /path/to/local/dir:/path/to/server/dir ghcr.io/takumi
 
 - `PATH_PREFIX`: (Optional) Restricts the directory paths where files can be uploaded. If set, uploaded files can only be extracted to paths starting with this prefix.
   Example: `docker run -p 8080:8080 -v /path/to/local/dir:/path/to/server/dir -e PATH_PREFIX=/allowed/upload/path ghcr.io/takumi3488/simple-file-uploader:latest`
+- `OTEL_EXPORTER_OTLP_ENDPOINT`: The URL of the OTLP endpoint where the OpenTelemetry exporter will send trace data. If this variable is set, OpenTelemetry tracing will be enabled. If not set, tracing will be disabled.
+  Example: `http://localhost:4317`
+- `OTEL_SERVICE_NAME`: The logical name of the service being instrumented by OpenTelemetry. Defaults to `deploy-tar` if not set.
+  Example: `my-custom-service-name`
 
 ### API Endpoints
 
