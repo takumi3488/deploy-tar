@@ -203,12 +203,13 @@ func TestUploadHandler_NoPath(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	c := e.NewContext(req, rec)
-	// We expect an error to be returned from the handler, so don't check NoError
-	err = UploadHandler(c) // Ignore the error and validate the response code and body
-	assert.Error(t, err)
+	// Call the handler and expect an error
+	_ = UploadHandler(c) // The error is checked by the response code and body
+	// assert.Error(t, err) // c.Error() makes the handler return nil, error is checked by status code
 
+	// Assert the HTTP status code and response body
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
-	assert.Equal(t, "Destination directory not specified", rec.Body.String())
+	assert.Equal(t, "{\"message\":\"Destination directory not specified\"}\n", rec.Body.String())
 }
 
 func TestUploadHandler_NoTarfile(t *testing.T) {
@@ -235,11 +236,12 @@ func TestUploadHandler_NoTarfile(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	c := e.NewContext(req, rec)
-	err = UploadHandler(c)
-	assert.Error(t, err)
+	_ = UploadHandler(c) // The error is checked by the response code and body
+	// assert.Error(t, err) // c.Error() makes the handler return nil, error is checked by status code
 
+	// Assert the HTTP status code and response body
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
-	assert.True(t, strings.HasPrefix(rec.Body.String(), "Tar file not found in request"), "Expected tar file not found error")
+	assert.True(t, strings.HasPrefix(rec.Body.String(), "{\"message\":\"Tar file not found in request"), "Expected 'Tar file not found in request' error message")
 }
 
 func TestUploadHandler_InvalidGzip(t *testing.T) {
@@ -269,11 +271,12 @@ func TestUploadHandler_InvalidGzip(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	c := e.NewContext(req, rec)
-	err = UploadHandler(c)
-	assert.Error(t, err)
+	_ = UploadHandler(c) // The error is checked by the response code and body
+	// assert.Error(t, err) // c.Error() makes the handler return nil, error is checked by status code
 
+	// Assert the HTTP status code and response body
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
-	assert.Equal(t, "Failed to create gzip reader: gzip: invalid header", rec.Body.String())
+	assert.Equal(t, "{\"message\":\"Failed to create gzip reader: gzip: invalid header\"}\n", rec.Body.String())
 }
 
 func TestUploadHandler_PathTraversalAttempt(t *testing.T) {
@@ -309,11 +312,13 @@ func TestUploadHandler_PathTraversalAttempt(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	c := e.NewContext(req, rec)
-	err = UploadHandler(c) // Ignore the error and validate the response code and body
-	assert.Error(t, err)
+	// Call the handler and expect an error
+	_ = UploadHandler(c)
+	// assert.Error(t, err) // c.Error() makes the handler return nil, error is checked by status code
 
+	// Assert the HTTP status code and response body
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
-	assert.Equal(t, "Invalid path in tar file (path traversal attempt)", rec.Body.String())
+	assert.Equal(t, "{\"message\":\"Invalid path in tar file (path traversal attempt)\"}\n", rec.Body.String())
 
 	_, err = os.Stat(filepath.Join(tempDir, "evil.txt")) // Check inside tempDir
 	assert.True(t, os.IsNotExist(err), "File should not be created inside tempDir due to path cleaning before check")

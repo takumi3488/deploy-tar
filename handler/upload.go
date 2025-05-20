@@ -17,22 +17,26 @@ func UploadHandler(c echo.Context) error {
 	// Get the destination directory
 	baseDirPath := c.FormValue("path")
 	if baseDirPath == "" {
-		return c.String(http.StatusBadRequest, "Destination directory not specified")
+		c.Error(echo.NewHTTPError(http.StatusBadRequest, "Destination directory not specified"))
+		return nil
 	}
 	// Ensure the base directory exists
 	if err := os.MkdirAll(baseDirPath, 0755); err != nil {
-		return c.String(http.StatusInternalServerError, "Failed to create base directory: "+err.Error())
+		c.Error(echo.NewHTTPError(http.StatusInternalServerError, "Failed to create base directory: "+err.Error()))
+		return nil
 	}
 
 	// Get the tar file
 	fileHeader, err := c.FormFile("tarfile")
 	if err != nil {
-		return c.String(http.StatusBadRequest, "Tar file not found in request: "+err.Error())
+		c.Error(echo.NewHTTPError(http.StatusBadRequest, "Tar file not found in request: "+err.Error()))
+		return nil
 	}
 
 	src, err := fileHeader.Open()
 	if err != nil {
-		return c.String(http.StatusInternalServerError, "Failed to open uploaded tar file: "+err.Error())
+		c.Error(echo.NewHTTPError(http.StatusInternalServerError, "Failed to open uploaded tar file: "+err.Error()))
+		return nil
 	}
 	defer func() {
 		if err := src.Close(); err != nil {
@@ -46,7 +50,8 @@ func UploadHandler(c echo.Context) error {
 	if strings.HasSuffix(fileHeader.Filename, ".gz") || strings.HasSuffix(fileHeader.Filename, ".tgz") {
 		gzr, err := gzip.NewReader(src)
 		if err != nil {
-			return c.String(http.StatusInternalServerError, "Failed to create gzip reader: "+err.Error())
+			c.Error(echo.NewHTTPError(http.StatusInternalServerError, "Failed to create gzip reader: "+err.Error()))
+			return nil
 		}
 		defer func() {
 			if err := gzr.Close(); err != nil {
@@ -64,7 +69,8 @@ func UploadHandler(c echo.Context) error {
 			break // End of tar archive
 		}
 		if err != nil {
-			return c.String(http.StatusInternalServerError, "Failed to read tar header: "+err.Error())
+			c.Error(echo.NewHTTPError(http.StatusInternalServerError, "Failed to read tar header: "+err.Error()))
+			return nil
 		}
 
 		// Construct the target path for the entry
@@ -75,46 +81,47 @@ func UploadHandler(c echo.Context) error {
 		cleanTarget := filepath.Clean(target)
 		if !strings.HasPrefix(cleanTarget, filepath.Clean(baseDirPath)+string(os.PathSeparator)) && cleanTarget != filepath.Clean(baseDirPath) {
 			c.Logger().Warnf("Path traversal attempt detected: %s (cleaned: %s)", header.Name, cleanTarget)
-			return c.String(http.StatusBadRequest, "Invalid path in tar file (path traversal attempt)")
+			c.Error(echo.NewHTTPError(http.StatusBadRequest, "Invalid path in tar file (path traversal attempt)"))
+			return nil
 		}
 
 		switch header.Typeflag {
 		case tar.TypeDir:
 			// Create directory
 			if err := os.MkdirAll(target, os.FileMode(header.Mode)); err != nil {
-				return c.String(http.StatusInternalServerError, "Failed to create directory from tar: "+err.Error())
+				c.Error(echo.NewHTTPError(http.StatusInternalServerError, "Failed to create directory from tar: "+err.Error()))
+				return nil
 			}
 		case tar.TypeReg:
 			// Create file
 			// Ensure parent directory exists
 			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
-				return c.String(http.StatusInternalServerError, "Failed to create parent directory for file: "+err.Error())
+				c.Error(echo.NewHTTPError(http.StatusInternalServerError, "Failed to create parent directory for file: "+err.Error()))
+				return nil
 			}
 
 			outFile, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR, os.FileMode(header.Mode))
 			if err != nil {
-				return c.String(http.StatusInternalServerError, "Failed to create file from tar: "+err.Error())
+				c.Error(echo.NewHTTPError(http.StatusInternalServerError, "Failed to create file from tar: "+err.Error()))
+				return nil
 			}
 			// Using a func to ensure outFile.Close() is called after copying
-			func() {
+			copyErr := func() error {
 				defer func() {
 					if err := outFile.Close(); err != nil {
 						c.Logger().Errorf("Failed to close output file %s: %v", target, err)
 					}
 				}()
 				if _, err := io.Copy(outFile, tarReader); err != nil {
-					// This error will be shadowed if not handled carefully,
-					// but we'll return from the outer function if it occurs.
-					// For more robust error handling, consider collecting errors.
 					c.Logger().Errorf("Failed to copy file content from tar for %s: %v", target, err)
-					// It's important to return an error here if io.Copy fails,
-					// otherwise the main function might return success incorrectly.
-					// However, the original code structure doesn't easily allow returning
-					// an error from this inner func to the UploadHandler.
-					// For now, we log the error. A more robust solution might involve
-					// restructuring or using a channel to communicate errors.
+					return echo.NewHTTPError(http.StatusInternalServerError, "Failed to copy file content from tar: "+err.Error())
 				}
+				return nil
 			}()
+			if copyErr != nil {
+				c.Error(copyErr)
+				return nil
+			}
 
 		default:
 			c.Logger().Infof("Unsupported tar entry type %c for %s", header.Typeflag, header.Name)
