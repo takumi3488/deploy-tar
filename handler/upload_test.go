@@ -515,3 +515,141 @@ func TestUploadHandler_WithPathPrefix_DisallowedPath(t *testing.T) {
 	_, statErr := os.Stat(filepath.Join(disallowedPath, "dummy.txt"))
 	assert.True(t, os.IsNotExist(statErr), "File should not be extracted to a disallowed path")
 }
+
+func TestUploadHandler_Success_Put_Overwrites(t *testing.T) {
+	e := echo.New()
+
+	tempDir, err := os.MkdirTemp("", "test-deploy-put-overwrite-*")
+	assert.NoError(t, err)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp directory %s: %v", tempDir, err)
+		}
+	}()
+
+	// 1. Create an initial file in the tempDir
+	oldFilePath := filepath.Join(tempDir, "old_file.txt")
+	oldFileContent := []byte("this is the old content")
+	err = os.WriteFile(oldFilePath, oldFileContent, 0644)
+	assert.NoError(t, err)
+
+	// 2. Create a new tar archive with a new file
+	filesToArchive := map[string]string{
+		"new_file.txt": "this is the new content",
+	}
+	archiveName := "new_archive.tar"
+	archiveContent := createTestArchive(t, filesToArchive, nil, archiveName)
+
+	body := new(bytes.Buffer)
+	writer := multipart.NewWriter(body)
+	part, err := writer.CreateFormFile("tarfile", archiveName)
+	assert.NoError(t, err)
+	_, err = io.Copy(part, archiveContent)
+	assert.NoError(t, err)
+	err = writer.WriteField("path", tempDir)
+	assert.NoError(t, err)
+	err = writer.Close()
+	assert.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPut, "/", body) // Use PUT method
+	req.Header.Set(echo.HeaderContentType, writer.FormDataContentType())
+	rec := httptest.NewRecorder()
+
+	c := e.NewContext(req, rec)
+	if assert.NoError(t, UploadHandler(c)) {
+		assert.Equal(t, http.StatusOK, rec.Code)
+		assert.Equal(t, "Tar file extracted successfully", rec.Body.String())
+	}
+
+	// 3. Assertions
+	//    - old_file.txt should not exist
+	_, err = os.Stat(oldFilePath)
+	assert.True(t, os.IsNotExist(err), "Old file should have been removed by PUT operation")
+
+	//    - new_file.txt should exist and have correct content
+	newFilePath := filepath.Join(tempDir, "new_file.txt")
+	newFileContent, err := os.ReadFile(newFilePath)
+	assert.NoError(t, err)
+	assert.Equal(t, "this is the new content", string(newFileContent))
+}
+
+func TestUploadHandler_Success_Put_WithPathPrefix_AllowedPath(t *testing.T) {
+	e := echo.New()
+	pathPrefix := "/allowed/put_prefix"
+	if err := os.Setenv("PATH_PREFIX", pathPrefix); err != nil {
+		t.Fatalf("failed to set env PATH_PREFIX: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("PATH_PREFIX"); err != nil {
+			t.Fatalf("failed to unset env PATH_PREFIX: %v", err)
+		}
+	}()
+
+	tempDir, err := os.MkdirTemp("", "test-deploy-put-prefix-*")
+	assert.NoError(t, err)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp directory %s: %v", tempDir, err)
+		}
+	}()
+
+	formPath := filepath.Join(tempDir, pathPrefix, "data_put") // e.g., /tmp/test-xxxx/allowed/put_prefix/data_put
+	err = os.MkdirAll(formPath, 0755)                          // Ensure formPath exists
+	assert.NoError(t, err)
+
+	// 1. Create an initial file in the formPath
+	oldFilePath := filepath.Join(formPath, "old_prefixed_file.txt")
+	oldFileContent := []byte("old content in prefixed path")
+	err = os.WriteFile(oldFilePath, oldFileContent, 0644)
+	assert.NoError(t, err)
+
+	// 2. Create a new tar archive with new files
+	filesToArchive := map[string]string{
+		"new_prefixed_file.txt":       "new content for prefixed path",
+		"subdir_put/another_file.txt": "another new file",
+	}
+	dirsToArchive := []string{"subdir_put/"}
+	archiveName := "test_put_allowed.tar.gz"
+	archiveContent := createTestArchive(t, filesToArchive, dirsToArchive, archiveName)
+
+	body := new(bytes.Buffer)
+	writer := multipart.NewWriter(body)
+	part, err := writer.CreateFormFile("tarfile", archiveName)
+	assert.NoError(t, err)
+	_, err = io.Copy(part, archiveContent)
+	assert.NoError(t, err)
+	err = writer.WriteField("path", formPath)
+	assert.NoError(t, err)
+	err = writer.Close()
+	assert.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPut, "/", body) // Use PUT method
+	req.Header.Set(echo.HeaderContentType, writer.FormDataContentType())
+	rec := httptest.NewRecorder()
+
+	c := e.NewContext(req, rec)
+	if assert.NoError(t, UploadHandler(c)) {
+		assert.Equal(t, http.StatusOK, rec.Code)
+		assert.Equal(t, "Tar file extracted successfully", rec.Body.String())
+	}
+
+	// 3. Assertions
+	//    - old_prefixed_file.txt should not exist in formPath
+	_, err = os.Stat(oldFilePath)
+	assert.True(t, os.IsNotExist(err), "Old file in prefixed path should have been removed by PUT operation")
+
+	//    - new_prefixed_file.txt should exist and have correct content in formPath
+	newFilePath := filepath.Join(formPath, "new_prefixed_file.txt")
+	newFileContent, err := os.ReadFile(newFilePath)
+	assert.NoError(t, err)
+	assert.Equal(t, "new content for prefixed path", string(newFileContent))
+
+	//    - subdir_put/another_file.txt should exist and have correct content in formPath
+	anotherNewFilePath := filepath.Join(formPath, "subdir_put/another_file.txt")
+	anotherNewFileContent, err := os.ReadFile(anotherNewFilePath)
+	assert.NoError(t, err)
+	assert.Equal(t, "another new file", string(anotherNewFileContent))
+
+	_, err = os.Stat(filepath.Join(formPath, "subdir_put"))
+	assert.NoError(t, err, "New subdirectory 'subdir_put' should exist in the target path")
+}
