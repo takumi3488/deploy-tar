@@ -38,7 +38,7 @@ func main() {
 			otelecho.WithTracerProvider(tracerProvider),
 			otelecho.WithPropagators(propagation.TraceContext{}),
 			otelecho.WithSkipper(func(c echo.Context) bool {
-				return c.Request().URL.Path == "/health"
+				return c.Request().URL.Path == "/healthz"
 			}),
 		}
 		serviceName := os.Getenv("OTEL_SERVICE_NAME")
