@@ -45,6 +45,42 @@ POST /upload # Upload and extract a tar file
 - Success: 200 OK with message "Tar file extracted successfully"
 - Error: 400 or 500 error code with appropriate error message
 
+#### Directory Listing
+
+**Request**
+
+```
+GET /list # List contents of a directory
+```
+
+**Query Parameters**
+
+- `d`: (Optional) The sub-directory path to list, relative to the `PATH_PREFIX` (if set) or the server's root. If not provided, lists the root directory.
+  Example: `d=myfolder` or `d=myfolder%2Fanotherfolder` (URL encoded for nested directories).
+
+**Response**
+
+- Success: 200 OK with an HTML page listing the directory contents.
+- Error: 400, 403, 404, or 500 error code with appropriate error message.
+
+**Example Usage**
+
+Example of listing a directory's contents using cURL:
+
+To list the root directory (or `PATH_PREFIX` if set):
+```bash
+curl http://localhost:8080/list
+```
+
+To list a subdirectory named `my_files`:
+```bash
+curl http://localhost:8080/list?d=my_files
+```
+
+To list a nested subdirectory `my_files/documents`:
+```bash
+curl "http://localhost:8080/list?d=my_files%2Fdocuments"
+```
 ### Example Usage
 
 Example of uploading a tar file using cURL:
