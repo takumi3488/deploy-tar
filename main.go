@@ -55,6 +55,9 @@ func main() {
 	e.POST("/", handler.UploadHandler)
 	e.PUT("/", handler.UploadHandler)
 
+	// Directory listing endpoint
+	e.GET("/list", handler.ListDirectoryHandler)
+
 	// Health check endpoint
 	e.GET("/healthz", handler.Healthz)
 	// Start the server
