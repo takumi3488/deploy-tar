@@ -1,8 +1,8 @@
 edition = "2023";
 
-package fileservice;
+package fileservice.v1;
 
-option go_package = "./proto/fileservice";
+option go_package = "deploytar/proto/fileservice/v1";
 
 service FileService {
   rpc ListDirectory(ListDirectoryRequest) returns (ListDirectoryResponse);
