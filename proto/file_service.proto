@@ -4,36 +4,23 @@ package fileservice;
 
 option go_package = "./proto/fileservice";
 
-// ファイルサービス
 service FileService {
-  // ディレクトリの内容を一覧表示
   rpc ListDirectory(ListDirectoryRequest) returns (ListDirectoryResponse);
 }
 
-// ディレクトリ一覧リクエスト
 message ListDirectoryRequest {
-  // サブディレクトリパス（オプション）
   string directory = 1;
 }
 
-// ディレクトリエントリ
 message DirectoryEntry {
-  // ファイル/ディレクトリ名
   string name = 1;
-  // タイプ（"file" または "directory"）
   string type = 2;
-  // ファイルサイズ（ディレクトリの場合はnull）
   string size = 3;
-  // リンク（相対パス）
   string link = 4;
 }
 
-// ディレクトリ一覧レスポンス
 message ListDirectoryResponse {
-  // 現在のパス
   string path = 1;
-  // ディレクトリエントリのリスト
   repeated DirectoryEntry entries = 2;
-  // 親ディレクトリへのリンク（オプション）
   string parent_link = 3;
 }
