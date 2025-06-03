@@ -55,10 +55,10 @@ func setupTestGRPCServer(t *testing.T) (pb.FileServiceClient, func()) {
 	// Wait for connection to be ready
 	connCtx2, cancelConn2 := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelConn2()
-	
+
 	// Simple approach: try to make a test call to verify connection
 	client := pb.NewFileServiceClient(conn)
-	
+
 	// Wait until we can successfully make a call or timeout
 	for {
 		rootDir := "/"
