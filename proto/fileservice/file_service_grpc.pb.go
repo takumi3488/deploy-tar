@@ -26,7 +26,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// ファイルサービス
+// FileService
 type FileServiceClient interface {
 	// ディレクトリの内容を一覧表示
 	ListDirectory(ctx context.Context, in *ListDirectoryRequest, opts ...grpc.CallOption) (*ListDirectoryResponse, error)
@@ -54,7 +54,7 @@ func (c *fileServiceClient) ListDirectory(ctx context.Context, in *ListDirectory
 // All implementations must embed UnimplementedFileServiceServer
 // for forward compatibility.
 //
-// ファイルサービス
+// FileService
 type FileServiceServer interface {
 	// ディレクトリの内容を一覧表示
 	ListDirectory(context.Context, *ListDirectoryRequest) (*ListDirectoryResponse, error)

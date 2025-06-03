@@ -21,7 +21,7 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// ディレクトリ一覧リクエスト
+// ListDirectoryRequest
 type ListDirectoryRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// サブディレクトリパス（オプション）
@@ -67,7 +67,7 @@ func (x *ListDirectoryRequest) GetDirectory() string {
 	return ""
 }
 
-// ディレクトリエントリ
+// DirectoryEntry
 type DirectoryEntry struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// ファイル/ディレクトリ名
@@ -140,7 +140,7 @@ func (x *DirectoryEntry) GetLink() string {
 	return ""
 }
 
-// ディレクトリ一覧レスポンス
+// ListDirectoryResponse
 type ListDirectoryResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 現在のパス
