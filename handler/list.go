@@ -2,7 +2,6 @@ package handler
 
 import (
 	"fmt"
-	"html"
 	"io/fs"
 	"net/http"
 	"net/url"
@@ -12,6 +11,21 @@ import (
 
 	"github.com/labstack/echo/v4"
 )
+
+// DirectoryEntry represents a single entry in the directory listing
+type DirectoryEntry struct {
+	Name string  `json:"name"`
+	Type string  `json:"type"`
+	Size *string `json:"size"`
+	Link string  `json:"link"`
+}
+
+// DirectoryResponse represents the JSON response for directory listing
+type DirectoryResponse struct {
+	Path       string           `json:"path"`
+	Entries    []DirectoryEntry `json:"entries"`
+	ParentLink *string          `json:"parent_link,omitempty"`
+}
 
 // ListDirectoryHandler is an HTTP handler that lists the contents of a specified directory.
 func ListDirectoryHandler(c echo.Context) error {
@@ -77,7 +91,7 @@ func ListDirectoryHandler(c echo.Context) error {
 		prefixInfo, err := os.Stat(cleanedPathPrefix)
 		if err != nil {
 			if os.IsNotExist(err) {
-				errToReturn := echo.NewHTTPError(http.StatusNotFound, map[string]string{"error": fmt.Sprintf("Base directory specified by PATH_PREFIX not found: %s", html.EscapeString(cleanedPathPrefix))})
+				errToReturn := echo.NewHTTPError(http.StatusNotFound, map[string]string{"error": fmt.Sprintf("Base directory specified by PATH_PREFIX not found: %s", cleanedPathPrefix)})
 				c.Echo().HTTPErrorHandler(errToReturn, c)
 				return errToReturn
 			}
@@ -87,7 +101,7 @@ func ListDirectoryHandler(c echo.Context) error {
 			return errToReturn
 		}
 		if !prefixInfo.IsDir() {
-			errToReturn := echo.NewHTTPError(http.StatusNotFound, map[string]string{"error": fmt.Sprintf("Base path specified by PATH_PREFIX is not a directory: %s", html.EscapeString(cleanedPathPrefix))})
+			errToReturn := echo.NewHTTPError(http.StatusNotFound, map[string]string{"error": fmt.Sprintf("Base path specified by PATH_PREFIX is not a directory: %s", cleanedPathPrefix)})
 			c.Echo().HTTPErrorHandler(errToReturn, c)
 			return errToReturn
 		}
@@ -191,12 +205,12 @@ func ListDirectoryHandler(c echo.Context) error {
 			displayErrorPath := rawQuerySubDir
 			// Removed empty if block. The commented-out logic is either covered by the initialization of displayErrorPath,
 			// or deemed unnecessary in the current code flow.
-			errToReturn := echo.NewHTTPError(http.StatusNotFound, map[string]string{"error": fmt.Sprintf("Directory not found: %s", html.EscapeString(displayErrorPath))})
+			errToReturn := echo.NewHTTPError(http.StatusNotFound, map[string]string{"error": fmt.Sprintf("Directory not found: %s", displayErrorPath)})
 			c.Echo().HTTPErrorHandler(errToReturn, c)
 			return errToReturn
 		}
 		if os.IsPermission(err) {
-			errToReturn := echo.NewHTTPError(http.StatusForbidden, map[string]string{"error": fmt.Sprintf("Permission denied for directory: %s", html.EscapeString(targetDir))})
+			errToReturn := echo.NewHTTPError(http.StatusForbidden, map[string]string{"error": fmt.Sprintf("Permission denied for directory: %s", targetDir)})
 			c.Echo().HTTPErrorHandler(errToReturn, c)
 			return errToReturn
 		}
@@ -207,14 +221,9 @@ func ListDirectoryHandler(c echo.Context) error {
 		return errToReturn
 	}
 
-	var htmlBuilder strings.Builder
-	htmlBuilder.WriteString("<!DOCTYPE html>\n<html>\n<head>\n")
-	htmlBuilder.WriteString(fmt.Sprintf("<title>Index of %s</title>\n", html.EscapeString(requestedPathForDisplay)))
-	htmlBuilder.WriteString("<style>body { font-family: sans-serif; } table { border-collapse: collapse; } th, td { padding: 5px; border: 1px solid #ddd; } a { text-decoration: none; color: #007bff; } a:hover { text-decoration: underline; }</style>\n")
-	htmlBuilder.WriteString("</head>\n<body>\n")
-	htmlBuilder.WriteString(fmt.Sprintf("<h1>Index of %s</h1>\n", html.EscapeString(requestedPathForDisplay)))
-	htmlBuilder.WriteString("<table>\n")
-	htmlBuilder.WriteString("<tr><th>Name</th><th>Type</th><th>Size</th></tr>\n")
+	// Prepare JSON response
+	var entries []DirectoryEntry
+	var parentLink *string
 
 	// Link to parent directory (if not root)
 	currentQueryDir := c.QueryParam("d")
@@ -223,18 +232,18 @@ func ListDirectoryHandler(c echo.Context) error {
 		if parentDir == "." { // The parent of the root is the root
 			parentDir = ""
 		}
-		parentLink := "/list"
+		parentLinkStr := "/list"
 		if parentDir != "" {
-			parentLink = fmt.Sprintf("/list?d=%s", url.QueryEscape(parentDir))
+			parentLinkStr = fmt.Sprintf("/list?d=%s", url.QueryEscape(parentDir))
 		}
-		htmlBuilder.WriteString(fmt.Sprintf("<tr><td><a href=\"%s\">../</a></td><td>Directory</td><td>-</td></tr>\n", parentLink))
+		parentLink = &parentLinkStr
 	}
 
 	for _, entry := range dirEntries {
 		entryName := entry.Name()
-		entryType := "File"
+		entryType := "file"
 		if entry.IsDir() {
-			entryType = "Directory"
+			entryType = "directory"
 		}
 
 		// Generate link in new query parameter format
@@ -243,35 +252,35 @@ func ListDirectoryHandler(c echo.Context) error {
 		entrySubDir := filepath.Join(c.QueryParam("d"), entryName)
 		linkHref := fmt.Sprintf("/list?d=%s", url.QueryEscape(entrySubDir))
 
-		sizeStr := "-"
+		var sizeStr *string
 		if !entry.IsDir() {
 			// Consider symbolic links by using getFileInfo
 			info, err := getFileInfo(targetDir, entry) // Pass targetDir
 			if err == nil {
-				sizeStr = formatFileSize(info.Size())
+				formattedSize := formatFileSize(info.Size())
+				sizeStr = &formattedSize
 			} else {
 				c.Logger().Warnf("Could not get file info for %s: %v", filepath.Join(targetDir, entryName), err)
+				defaultSize := "-"
+				sizeStr = &defaultSize
 			}
 		}
 
-		if entry.IsDir() {
-			htmlBuilder.WriteString(fmt.Sprintf("<tr><td><a href=\"%s\">%s/</a></td><td>%s</td><td>%s</td></tr>\n",
-				linkHref, html.EscapeString(entryName), entryType, sizeStr))
-		} else {
-			// Links to files are intended for download or display, so
-			// it's common to link to the actual file path instead of the /list endpoint.
-			// However, this handler is for listing only, so either keep it as /list?d=... here,
-			// or point to another endpoint (e.g., /files/subDir/filename).
-			// The current instruction is to change the listing feature, so keep it as /list?d=...
-			// If a file download feature is added in the future, modify this.
-			htmlBuilder.WriteString(fmt.Sprintf("<tr><td><a href=\"%s\">%s</a></td><td>%s</td><td>%s</td></tr>\n",
-				linkHref, html.EscapeString(entryName), entryType, sizeStr))
-		}
+		entries = append(entries, DirectoryEntry{
+			Name: entryName,
+			Type: entryType,
+			Size: sizeStr,
+			Link: linkHref,
+		})
 	}
 
-	htmlBuilder.WriteString("</table>\n</body>\n</html>")
+	response := DirectoryResponse{
+		Path:       requestedPathForDisplay,
+		Entries:    entries,
+		ParentLink: parentLink,
+	}
 
-	return c.HTML(http.StatusOK, htmlBuilder.String())
+	return c.JSON(http.StatusOK, response)
 }
 
 func formatFileSize(size int64) string {

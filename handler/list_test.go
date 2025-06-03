@@ -1,12 +1,12 @@
 package handler
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	// "strings" // Commented out or removed as it's unused
 	"testing"
 
 	"github.com/labstack/echo/v4"
@@ -108,105 +108,96 @@ func TestListDirectoryHandler_SuccessCases(t *testing.T) {
 	e := echo.New()
 
 	tests := []struct {
-		name                    string
-		queryD                  string // Value of query parameter "d"
-		pathPrefixEnv           string // Environment variable PATH_PREFIX
-		expectedStatus          int
-		expectedBodyContains    []string
-		expectedBodyNotContains []string
+		name               string
+		queryD             string // Value of query parameter "d"
+		pathPrefixEnv      string // Environment variable PATH_PREFIX
+		expectedStatus     int
+		expectedPath       string
+		expectedEntryNames []string
+		expectedEntryTypes []string
+		expectParentLink   bool
+		expectedParentLink string
 	}{
 		{
-			name:           "List root directory (no prefix, no query d)",
-			queryD:         "",
-			pathPrefixEnv:  "",
-			expectedStatus: http.StatusOK,
-			expectedBodyContains: []string{
-				"<title>Index of /</title>",
-				"<h1>Index of /</h1>",
-				"file1.txt", "File",
-				"dir1/", "Directory",
-				"empty_dir/", "Directory",
-				"<a href=\"/list?d=dir1\">dir1/</a>",
-				"<a href=\"/list?d=file1.txt\">file1.txt</a>",
-			},
+			name:               "List root directory (no prefix, no query d)",
+			queryD:             "",
+			pathPrefixEnv:      "",
+			expectedStatus:     http.StatusOK,
+			expectedPath:       "/",
+			expectedEntryNames: []string{"file1.txt", "dir1", "empty_dir"},
+			expectedEntryTypes: []string{"file", "directory", "directory"},
+			expectParentLink:   false,
 		},
 		{
-			name:           "List subdirectory (no prefix, query d=dir1)",
-			queryD:         "dir1",
-			pathPrefixEnv:  "",
-			expectedStatus: http.StatusOK,
-			expectedBodyContains: []string{
-				"<title>Index of /dir1</title>",
-				"<h1>Index of /dir1</h1>",
-				"file2.txt", "File",
-				"<a href=\"/list?d=dir1%2Ffile2.txt\">file2.txt</a>", // URL-encoded slash
-				"<a href=\"/list\">../</a>",                          // Link to parent directory (no d)
-			},
+			name:               "List subdirectory (no prefix, query d=dir1)",
+			queryD:             "dir1",
+			pathPrefixEnv:      "",
+			expectedStatus:     http.StatusOK,
+			expectedPath:       "/dir1",
+			expectedEntryNames: []string{"file2.txt"},
+			expectedEntryTypes: []string{"file"},
+			expectParentLink:   true,
+			expectedParentLink: "/list",
 		},
 		{
-			name:           "List empty directory (no prefix, query d=empty_dir)",
-			queryD:         "empty_dir",
-			pathPrefixEnv:  "",
-			expectedStatus: http.StatusOK,
-			expectedBodyContains: []string{
-				"<title>Index of /empty_dir</title>",
-				"<h1>Index of /empty_dir</h1>",
-				"<a href=\"/list\">../</a>",
-			},
-			expectedBodyNotContains: []string{"file1.txt", "dir1"},
+			name:               "List empty directory (no prefix, query d=empty_dir)",
+			queryD:             "empty_dir",
+			pathPrefixEnv:      "",
+			expectedStatus:     http.StatusOK,
+			expectedPath:       "/empty_dir",
+			expectedEntryNames: []string{},
+			expectedEntryTypes: []string{},
+			expectParentLink:   true,
+			expectedParentLink: "/list",
 		},
 		{
-			name:           "List root with PATH_PREFIX=/serve (query d is empty)",
-			queryD:         "",
-			pathPrefixEnv:  "/serve",
-			expectedStatus: http.StatusOK,
-			expectedBodyContains: []string{
-				"<title>Index of /</title>", // The display path seen by the user is /
-				"<h1>Index of /</h1>",
-				// Links do not include PATH_PREFIX and are specified by query parameter d
-				"<a href=\"/list?d=dir1\">dir1/</a>",
-				"<a href=\"/list?d=file1.txt\">file1.txt</a>",
-			},
+			name:               "List root with PATH_PREFIX=/serve (query d is empty)",
+			queryD:             "",
+			pathPrefixEnv:      "/serve",
+			expectedStatus:     http.StatusOK,
+			expectedPath:       "/",
+			expectedEntryNames: []string{"file1.txt", "dir1", "empty_dir"},
+			expectedEntryTypes: []string{"file", "directory", "directory"},
+			expectParentLink:   false,
 		},
 		{
-			name:           "List subdir with PATH_PREFIX=/serve, query d=dir1",
-			queryD:         "dir1",
-			pathPrefixEnv:  "/serve",
-			expectedStatus: http.StatusOK,
-			expectedBodyContains: []string{
-				"<title>Index of /dir1</title>", // The display path seen by the user is /dir1
-				"<h1>Index of /dir1</h1>",
-				"<a href=\"/list?d=dir1%2Ffile2.txt\">file2.txt</a>",
-				"<a href=\"/list\">../</a>", // Link to parent directory (no d)
-			},
+			name:               "List subdir with PATH_PREFIX=/serve, query d=dir1",
+			queryD:             "dir1",
+			pathPrefixEnv:      "/serve",
+			expectedStatus:     http.StatusOK,
+			expectedPath:       "/dir1",
+			expectedEntryNames: []string{"file2.txt"},
+			expectedEntryTypes: []string{"file"},
+			expectParentLink:   true,
+			expectedParentLink: "/list",
 		},
 		{
-			name:           "List root with PATH_PREFIX=/ (slash only, query d is empty)",
-			queryD:         "",
-			pathPrefixEnv:  "/",
-			expectedStatus: http.StatusOK,
-			expectedBodyContains: []string{
-				"<title>Index of /</title>",
-				"<a href=\"/list?d=dir1\">dir1/</a>",
-				"<a href=\"/list?d=file1.txt\">file1.txt</a>",
-			},
+			name:               "List root with PATH_PREFIX=/ (slash only, query d is empty)",
+			queryD:             "",
+			pathPrefixEnv:      "/",
+			expectedStatus:     http.StatusOK,
+			expectedPath:       "/",
+			expectedEntryNames: []string{"file1.txt", "dir1", "empty_dir"},
+			expectedEntryTypes: []string{"file", "directory", "directory"},
+			expectParentLink:   false,
 		},
 		{
-			name:           "List subdir with PATH_PREFIX=/, query d=dir1",
-			queryD:         "dir1",
-			pathPrefixEnv:  "/",
-			expectedStatus: http.StatusOK,
-			expectedBodyContains: []string{
-				"<title>Index of /dir1</title>",
-				"<a href=\"/list?d=dir1%2Ffile2.txt\">file2.txt</a>",
-				"<a href=\"/list\">../</a>",
-			},
+			name:               "List subdir with PATH_PREFIX=/, query d=dir1",
+			queryD:             "dir1",
+			pathPrefixEnv:      "/",
+			expectedStatus:     http.StatusOK,
+			expectedPath:       "/dir1",
+			expectedEntryNames: []string{"file2.txt"},
+			expectedEntryTypes: []string{"file"},
+			expectParentLink:   true,
+			expectedParentLink: "/list",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			currentTestPrefixPath := tt.pathPrefixEnv
+			var createdPrefixDir string // Track the directory we create for cleanup
 			if tt.pathPrefixEnv != "" && tt.pathPrefixEnv != "/" {
 				// If tt.pathPrefixEnv is in a format like "/serve", extract "serve"
 				prefixDirName := tt.pathPrefixEnv
@@ -216,6 +207,7 @@ func TestListDirectoryHandler_SuccessCases(t *testing.T) {
 				// Combine with testRootDir (current working directory) to make it an absolute path
 				absolutePrefixPath := filepath.Join(testRootDir, prefixDirName)
 				currentTestPrefixPath = absolutePrefixPath // Update the path to be set in the environment variable
+				createdPrefixDir = absolutePrefixPath      // Store for cleanup
 
 				if err := os.MkdirAll(absolutePrefixPath, 0755); err != nil {
 					t.Fatalf("Failed to create PATH_PREFIX directory %s: %v", absolutePrefixPath, err)
@@ -249,6 +241,12 @@ func TestListDirectoryHandler_SuccessCases(t *testing.T) {
 				if err := os.Unsetenv("PATH_PREFIX"); err != nil {
 					t.Logf("Failed to unset PATH_PREFIX: %v", err)
 				}
+				// Clean up the created prefix directory
+				if createdPrefixDir != "" {
+					if err := os.RemoveAll(createdPrefixDir); err != nil {
+						t.Logf("Failed to clean up prefix directory %s: %v", createdPrefixDir, err)
+					}
+				}
 			}()
 
 			// Construct request URL
@@ -265,12 +263,40 @@ func TestListDirectoryHandler_SuccessCases(t *testing.T) {
 			if assert.NoError(t, ListDirectoryHandler(c)) {
 				assert.Equal(t, tt.expectedStatus, rec.Code)
 				if tt.expectedStatus == http.StatusOK {
-					body := rec.Body.String()
-					for _, expected := range tt.expectedBodyContains {
-						assert.Contains(t, body, expected, fmt.Sprintf("Body should contain '%s'", expected))
-					}
-					for _, notExpected := range tt.expectedBodyNotContains {
-						assert.NotContains(t, body, notExpected, fmt.Sprintf("Body should NOT contain '%s'", notExpected))
+					// Parse JSON response
+					var response DirectoryResponse
+					if assert.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response)) {
+						// Check path
+						assert.Equal(t, tt.expectedPath, response.Path)
+
+						// Check entries count
+						assert.Len(t, response.Entries, len(tt.expectedEntryNames))
+
+						// Check each entry
+						entryNames := make([]string, len(response.Entries))
+						entryTypes := make([]string, len(response.Entries))
+						for i, entry := range response.Entries {
+							entryNames[i] = entry.Name
+							entryTypes[i] = entry.Type
+						}
+
+						for _, expectedName := range tt.expectedEntryNames {
+							assert.Contains(t, entryNames, expectedName)
+						}
+
+						for _, expectedType := range tt.expectedEntryTypes {
+							assert.Contains(t, entryTypes, expectedType)
+						}
+
+						// Check parent link
+						if tt.expectParentLink {
+							assert.NotNil(t, response.ParentLink)
+							if response.ParentLink != nil {
+								assert.Equal(t, tt.expectedParentLink, *response.ParentLink)
+							}
+						} else {
+							assert.Nil(t, response.ParentLink)
+						}
 					}
 				}
 			}
@@ -352,6 +378,7 @@ func TestListDirectoryHandler_PathPrefixValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			currentTestPrefixPath := tt.pathPrefixEnv
+			var createdPrefixDir string // Track the directory we create for cleanup
 			if tt.pathPrefixEnv != "" && tt.pathPrefixEnv != "/" {
 				prefixDirName := tt.pathPrefixEnv
 				if filepath.IsAbs(prefixDirName) {
@@ -359,6 +386,7 @@ func TestListDirectoryHandler_PathPrefixValidation(t *testing.T) {
 				}
 				absolutePrefixPath := filepath.Join(testRootDir, prefixDirName)
 				currentTestPrefixPath = absolutePrefixPath
+				createdPrefixDir = absolutePrefixPath // Store for cleanup
 
 				if err := os.MkdirAll(absolutePrefixPath, 0755); err != nil {
 					t.Fatalf("Failed to create PATH_PREFIX directory %s: %v", absolutePrefixPath, err)
@@ -391,6 +419,12 @@ func TestListDirectoryHandler_PathPrefixValidation(t *testing.T) {
 			defer func() {
 				if err := os.Unsetenv("PATH_PREFIX"); err != nil {
 					t.Logf("Failed to unset PATH_PREFIX: %v", err)
+				}
+				// Clean up the created prefix directory
+				if createdPrefixDir != "" {
+					if err := os.RemoveAll(createdPrefixDir); err != nil {
+						t.Logf("Failed to clean up prefix directory %s: %v", createdPrefixDir, err)
+					}
 				}
 			}()
 
