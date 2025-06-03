@@ -193,6 +193,192 @@ func (x *ListDirectoryResponse) GetParentLink() string {
 	return ""
 }
 
+type UploadFileRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Data:
+	//
+	//	*UploadFileRequest_Info
+	//	*UploadFileRequest_ChunkData
+	Data          isUploadFileRequest_Data `protobuf_oneof:"data"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UploadFileRequest) Reset() {
+	*x = UploadFileRequest{}
+	mi := &file_proto_fileservice_v1_file_service_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UploadFileRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UploadFileRequest) ProtoMessage() {}
+
+func (x *UploadFileRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_fileservice_v1_file_service_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UploadFileRequest.ProtoReflect.Descriptor instead.
+func (*UploadFileRequest) Descriptor() ([]byte, []int) {
+	return file_proto_fileservice_v1_file_service_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *UploadFileRequest) GetData() isUploadFileRequest_Data {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+func (x *UploadFileRequest) GetInfo() *FileInfo {
+	if x != nil {
+		if x, ok := x.Data.(*UploadFileRequest_Info); ok {
+			return x.Info
+		}
+	}
+	return nil
+}
+
+func (x *UploadFileRequest) GetChunkData() []byte {
+	if x != nil {
+		if x, ok := x.Data.(*UploadFileRequest_ChunkData); ok {
+			return x.ChunkData
+		}
+	}
+	return nil
+}
+
+type isUploadFileRequest_Data interface {
+	isUploadFileRequest_Data()
+}
+
+type UploadFileRequest_Info struct {
+	Info *FileInfo `protobuf:"bytes,1,opt,name=info,oneof"`
+}
+
+type UploadFileRequest_ChunkData struct {
+	ChunkData []byte `protobuf:"bytes,2,opt,name=chunk_data,json=chunkData,oneof"`
+}
+
+func (*UploadFileRequest_Info) isUploadFileRequest_Data() {}
+
+func (*UploadFileRequest_ChunkData) isUploadFileRequest_Data() {}
+
+type FileInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Path          *string                `protobuf:"bytes,1,opt,name=path" json:"path,omitempty"`
+	Filename      *string                `protobuf:"bytes,2,opt,name=filename" json:"filename,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FileInfo) Reset() {
+	*x = FileInfo{}
+	mi := &file_proto_fileservice_v1_file_service_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FileInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FileInfo) ProtoMessage() {}
+
+func (x *FileInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_fileservice_v1_file_service_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FileInfo.ProtoReflect.Descriptor instead.
+func (*FileInfo) Descriptor() ([]byte, []int) {
+	return file_proto_fileservice_v1_file_service_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *FileInfo) GetPath() string {
+	if x != nil && x.Path != nil {
+		return *x.Path
+	}
+	return ""
+}
+
+func (x *FileInfo) GetFilename() string {
+	if x != nil && x.Filename != nil {
+		return *x.Filename
+	}
+	return ""
+}
+
+type UploadFileResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Message       *string                `protobuf:"bytes,1,opt,name=message" json:"message,omitempty"`
+	FilePath      *string                `protobuf:"bytes,2,opt,name=file_path,json=filePath" json:"file_path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UploadFileResponse) Reset() {
+	*x = UploadFileResponse{}
+	mi := &file_proto_fileservice_v1_file_service_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UploadFileResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UploadFileResponse) ProtoMessage() {}
+
+func (x *UploadFileResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_fileservice_v1_file_service_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UploadFileResponse.ProtoReflect.Descriptor instead.
+func (*UploadFileResponse) Descriptor() ([]byte, []int) {
+	return file_proto_fileservice_v1_file_service_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *UploadFileResponse) GetMessage() string {
+	if x != nil && x.Message != nil {
+		return *x.Message
+	}
+	return ""
+}
+
+func (x *UploadFileResponse) GetFilePath() string {
+	if x != nil && x.FilePath != nil {
+		return *x.FilePath
+	}
+	return ""
+}
+
 var File_proto_fileservice_v1_file_service_proto protoreflect.FileDescriptor
 
 const file_proto_fileservice_v1_file_service_proto_rawDesc = "" +
@@ -209,9 +395,22 @@ const file_proto_fileservice_v1_file_service_proto_rawDesc = "" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x128\n" +
 	"\aentries\x18\x02 \x03(\v2\x1e.fileservice.v1.DirectoryEntryR\aentries\x12\x1f\n" +
 	"\vparent_link\x18\x03 \x01(\tR\n" +
-	"parentLink2k\n" +
+	"parentLink\"l\n" +
+	"\x11UploadFileRequest\x12.\n" +
+	"\x04info\x18\x01 \x01(\v2\x18.fileservice.v1.FileInfoH\x00R\x04info\x12\x1f\n" +
+	"\n" +
+	"chunk_data\x18\x02 \x01(\fH\x00R\tchunkDataB\x06\n" +
+	"\x04data\":\n" +
+	"\bFileInfo\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x1a\n" +
+	"\bfilename\x18\x02 \x01(\tR\bfilename\"K\n" +
+	"\x12UploadFileResponse\x12\x18\n" +
+	"\amessage\x18\x01 \x01(\tR\amessage\x12\x1b\n" +
+	"\tfile_path\x18\x02 \x01(\tR\bfilePath2\xc2\x01\n" +
 	"\vFileService\x12\\\n" +
-	"\rListDirectory\x12$.fileservice.v1.ListDirectoryRequest\x1a%.fileservice.v1.ListDirectoryResponseB Z\x1edeploytar/proto/fileservice/v1b\beditionsp\xe8\a"
+	"\rListDirectory\x12$.fileservice.v1.ListDirectoryRequest\x1a%.fileservice.v1.ListDirectoryResponse\x12U\n" +
+	"\n" +
+	"UploadFile\x12!.fileservice.v1.UploadFileRequest\x1a\".fileservice.v1.UploadFileResponse(\x01B Z\x1edeploytar/proto/fileservice/v1b\beditionsp\xe8\a"
 
 var (
 	file_proto_fileservice_v1_file_service_proto_rawDescOnce sync.Once
@@ -225,21 +424,27 @@ func file_proto_fileservice_v1_file_service_proto_rawDescGZIP() []byte {
 	return file_proto_fileservice_v1_file_service_proto_rawDescData
 }
 
-var file_proto_fileservice_v1_file_service_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_proto_fileservice_v1_file_service_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_proto_fileservice_v1_file_service_proto_goTypes = []any{
 	(*ListDirectoryRequest)(nil),  // 0: fileservice.v1.ListDirectoryRequest
 	(*DirectoryEntry)(nil),        // 1: fileservice.v1.DirectoryEntry
 	(*ListDirectoryResponse)(nil), // 2: fileservice.v1.ListDirectoryResponse
+	(*UploadFileRequest)(nil),     // 3: fileservice.v1.UploadFileRequest
+	(*FileInfo)(nil),              // 4: fileservice.v1.FileInfo
+	(*UploadFileResponse)(nil),    // 5: fileservice.v1.UploadFileResponse
 }
 var file_proto_fileservice_v1_file_service_proto_depIdxs = []int32{
 	1, // 0: fileservice.v1.ListDirectoryResponse.entries:type_name -> fileservice.v1.DirectoryEntry
-	0, // 1: fileservice.v1.FileService.ListDirectory:input_type -> fileservice.v1.ListDirectoryRequest
-	2, // 2: fileservice.v1.FileService.ListDirectory:output_type -> fileservice.v1.ListDirectoryResponse
-	2, // [2:3] is the sub-list for method output_type
-	1, // [1:2] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	4, // 1: fileservice.v1.UploadFileRequest.info:type_name -> fileservice.v1.FileInfo
+	0, // 2: fileservice.v1.FileService.ListDirectory:input_type -> fileservice.v1.ListDirectoryRequest
+	3, // 3: fileservice.v1.FileService.UploadFile:input_type -> fileservice.v1.UploadFileRequest
+	2, // 4: fileservice.v1.FileService.ListDirectory:output_type -> fileservice.v1.ListDirectoryResponse
+	5, // 5: fileservice.v1.FileService.UploadFile:output_type -> fileservice.v1.UploadFileResponse
+	4, // [4:6] is the sub-list for method output_type
+	2, // [2:4] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_proto_fileservice_v1_file_service_proto_init() }
@@ -247,13 +452,17 @@ func file_proto_fileservice_v1_file_service_proto_init() {
 	if File_proto_fileservice_v1_file_service_proto != nil {
 		return
 	}
+	file_proto_fileservice_v1_file_service_proto_msgTypes[3].OneofWrappers = []any{
+		(*UploadFileRequest_Info)(nil),
+		(*UploadFileRequest_ChunkData)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_fileservice_v1_file_service_proto_rawDesc), len(file_proto_fileservice_v1_file_service_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

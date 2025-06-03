@@ -10,7 +10,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	pb "deploytar/proto/fileservice/v1"
+	pb "deploytar/proto/deploytar/proto/fileservice/v1"
 )
 
 // GRPCListDirectoryServer implements the FileService gRPC server
