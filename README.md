@@ -5,6 +5,7 @@ A simple file upload server that provides both RESTful API and gRPC API to uploa
 ## Features
 
 - Single tar file upload and extraction (REST API)
+- Upload of regular files (non-archive)
 - Files extracted to specified paths
 - Automatic creation of directory structures from tar archive
 - Directory listing via REST API and gRPC API
@@ -40,17 +41,19 @@ The server runs on two ports:
 **Request**
 
 ```
-POST /upload # Upload and extract a tar file
+POST /upload # Upload and extract a tar file, or upload a regular file
 ```
 
 **Parameters**
 
 - `path`: Destination directory path where tar contents will be extracted (required). If the `PATH_PREFIX` environment variable is set, this path must start with the specified prefix, otherwise the request will be rejected.
-- `tarfile`: The tar file to upload (required)
+- `tarfile`: The tar file or regular file to upload (required)
 
 **Response**
 
-- Success: 200 OK with message "Tar file extracted successfully"
+- Success:
+  - For tar files: 200 OK with message "Tar file extracted successfully"
+  - For regular files: 200 OK with message "File uploaded successfully"
 - Error: 400 or 500 error code with appropriate error message
 
 ##### Directory Listing
