@@ -16,7 +16,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace"
 	"google.golang.org/grpc"
 
-	pb "deploytar/proto/fileservice/v1"
+	pb "deploytar/proto/deploytar/proto/fileservice/v1"
 )
 
 func main() {

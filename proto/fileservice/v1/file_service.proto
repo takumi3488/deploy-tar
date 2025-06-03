@@ -6,6 +6,7 @@ option go_package = "deploytar/proto/fileservice/v1";
 
 service FileService {
   rpc ListDirectory(ListDirectoryRequest) returns (ListDirectoryResponse);
+  rpc UploadFile(stream UploadFileRequest) returns (UploadFileResponse);
 }
 
 message ListDirectoryRequest {
@@ -23,4 +24,21 @@ message ListDirectoryResponse {
   string path = 1;
   repeated DirectoryEntry entries = 2;
   string parent_link = 3;
+}
+
+message UploadFileRequest {
+  oneof data {
+    FileInfo info = 1;
+    bytes chunk_data = 2;
+  }
+}
+
+message FileInfo {
+  string path = 1;
+  string filename = 2;
+}
+
+message UploadFileResponse {
+  string message = 1;
+  string file_path = 2;
 }
