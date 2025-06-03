@@ -13,7 +13,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	pb "deploytar/proto/fileservice"
+	pb "deploytar/proto/fileservice/v1"
 )
 
 func TestGRPCIntegration(t *testing.T) {

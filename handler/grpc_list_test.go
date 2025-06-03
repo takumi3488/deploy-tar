@@ -11,7 +11,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	pb "deploytar/proto/fileservice"
+	pb "deploytar/proto/fileservice/v1"
 )
 
 func TestGRPCListDirectoryServer_ListDirectory(t *testing.T) {
