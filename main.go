@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"deploytar/handler"
+	"log"
+	"net"
 	"os"
 
 	"github.com/labstack/echo/v4"
@@ -12,6 +14,9 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/trace"
+	"google.golang.org/grpc"
+
+	pb "deploytar/proto/fileservice"
 )
 
 func main() {
@@ -60,6 +65,26 @@ func main() {
 
 	// Health check endpoint
 	e.GET("/healthz", handler.Healthz)
-	// Start the server
+
+	// Start gRPC server in a separate goroutine
+	go startGRPCServer()
+
+	// Start the Echo server
 	e.Logger.Fatal(e.Start(":8080"))
+}
+
+func startGRPCServer() {
+	lis, err := net.Listen("tcp", ":9090")
+	if err != nil {
+		log.Fatalf("Failed to listen on port 9090: %v", err)
+	}
+
+	grpcServer := grpc.NewServer()
+	fileService := handler.NewGRPCListDirectoryServer()
+	pb.RegisterFileServiceServer(grpcServer, fileService)
+
+	log.Println("gRPC server listening on :9090")
+	if err := grpcServer.Serve(lis); err != nil {
+		log.Fatalf("Failed to serve gRPC server: %v", err)
+	}
 }
