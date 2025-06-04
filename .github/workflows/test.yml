@@ -43,7 +43,7 @@ jobs:
         run: nohup ./app &
 
       - name: Run runn tests
-        run: $(go env GOPATH)/bin/runn run runn/**/*.yml
+        run: $(go env GOPATH)/bin/runn run --scopes read:parent runn/**/*.yml
 
       - name: Test
         run: go test -v ./...
