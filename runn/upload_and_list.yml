@@ -4,7 +4,7 @@ runners:
   req:
     endpoint: http://localhost:8080
 vars:
-  testFile: /app/runn/test.txt # Relative path for runn
+  testFile: runn/test.txt # Relative path for runn
   uploadDir: "test_uploads" # Define an upload directory
   fileNameInArchive: "test.txt" # Name of the file as it will appear after upload
 steps:

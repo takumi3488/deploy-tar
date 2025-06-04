@@ -22,4 +22,4 @@ steps:
         message:
           directory: "{{ vars.uploadDir }}"
     test: |
-      len(filter(current.res.message.entries, {.name == vars.fileNameInArchive})) > 0
+      len(filter(current.res.message.entries, {string(.name) == string(vars.fileNameInArchive)})) > 0
