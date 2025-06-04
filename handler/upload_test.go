@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"encoding/json"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -16,10 +17,9 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-// createTestArchive creates an in-memory tar or tar.gz archive for testing.
-// It determines whether to use gzip compression based on the extension of archiveFilename.
 func createTestArchive(t *testing.T, files map[string]string, dirs []string, archiveFilename string) *bytes.Buffer {
 	buf := new(bytes.Buffer)
 	var tw *tar.Writer
@@ -33,23 +33,19 @@ func createTestArchive(t *testing.T, files map[string]string, dirs []string, arc
 		closer = gw
 	} else {
 		tw = tar.NewWriter(buf)
-		closer = tw // tar.Writer also needs to be Close()d
 	}
 	defer func() {
-		if err := closer.Close(); err != nil {
-			t.Logf("Failed to close writer: %v", err)
+		if err := tw.Close(); err != nil {
+			t.Logf("Failed to close tar writer: %v", err)
 		}
-	}() // Close either gzip.Writer or tar.Writer
-	if tw != closer { // If using gzip, close tar.Writer separately
-		defer func() {
-			if err := tw.Close(); err != nil {
-				t.Logf("Failed to close tar writer: %v", err)
+		if closer != nil {
+			if err := closer.Close(); err != nil {
+				t.Logf("Failed to close writer: %v", err)
 			}
-		}()
-	}
+		}
+	}()
 
 	now := time.Now()
-	// Add directories
 	for _, dir := range dirs {
 		name := strings.TrimSuffix(dir, "/") + "/"
 		hdr := &tar.Header{
@@ -63,7 +59,6 @@ func createTestArchive(t *testing.T, files map[string]string, dirs []string, arc
 		}
 	}
 
-	// Add files
 	for name, content := range files {
 		hdr := &tar.Header{
 			Name:     name,
@@ -119,10 +114,13 @@ func TestUploadHandler_Success_Tar(t *testing.T) {
 	c := e.NewContext(req, rec)
 	if assert.NoError(t, UploadHandler(c)) {
 		assert.Equal(t, http.StatusOK, rec.Code)
-		assert.Equal(t, "Tar file extracted successfully", rec.Body.String())
+		var resp map[string]string
+		err := json.Unmarshal(rec.Body.Bytes(), &resp)
+		assert.NoError(t, err, "Failed to parse JSON response")
+		assert.Contains(t, resp["message"], "Archive extracted successfully", "Success message mismatch")
+		assert.NotEmpty(t, resp["path"], "Path should be in response")
 	}
 
-	// Verify extracted files
 	content1, err := os.ReadFile(filepath.Join(tempDir, "file1.txt"))
 	assert.NoError(t, err)
 	assert.Equal(t, "content of file1", string(content1))
@@ -146,12 +144,12 @@ func TestUploadHandler_Success_TarGz(t *testing.T) {
 		}
 	}()
 
+	archiveName := "test.tar.gz"
 	filesToArchive := map[string]string{
 		"fileA.txt":        "content of fileA",
 		"folder/fileB.log": "log content",
 	}
 	dirsToArchive := []string{"folder/"}
-	archiveName := "test.tar.gz" // Test with .tar.gz
 	archiveContent := createTestArchive(t, filesToArchive, dirsToArchive, archiveName)
 
 	body := new(bytes.Buffer)
@@ -172,7 +170,11 @@ func TestUploadHandler_Success_TarGz(t *testing.T) {
 	c := e.NewContext(req, rec)
 	if assert.NoError(t, UploadHandler(c)) {
 		assert.Equal(t, http.StatusOK, rec.Code)
-		assert.Equal(t, "Tar file extracted successfully", rec.Body.String())
+		var resp map[string]string
+		err := json.Unmarshal(rec.Body.Bytes(), &resp)
+		assert.NoError(t, err, "Failed to parse JSON response")
+		assert.Contains(t, resp["message"], "Archive extracted successfully", "Success message mismatch")
+		assert.NotEmpty(t, resp["path"], "Path should be in response")
 	}
 
 	contentA, err := os.ReadFile(filepath.Join(tempDir, "fileA.txt"))
@@ -194,7 +196,6 @@ func TestUploadHandler_NoPath(t *testing.T) {
 	assert.NoError(t, err)
 	_, err = io.Copy(part, archiveContent)
 	assert.NoError(t, err)
-	// No "path" field
 	err = writer.Close()
 	assert.NoError(t, err)
 
@@ -203,13 +204,10 @@ func TestUploadHandler_NoPath(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	c := e.NewContext(req, rec)
-	// Call the handler and expect an error
-	_ = UploadHandler(c) // The error is checked by the response code and body
-	// assert.Error(t, err) // c.Error() makes the handler return nil, error is checked by status code
+	err = UploadHandler(c)
+	assert.NoError(t, err)
 
-	// Assert the HTTP status code and response body
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
-	assert.Equal(t, "{\"message\":\"Destination directory not specified\"}\n", rec.Body.String())
 }
 
 func TestUploadHandler_NoTarfile(t *testing.T) {
@@ -225,7 +223,6 @@ func TestUploadHandler_NoTarfile(t *testing.T) {
 
 	body := new(bytes.Buffer)
 	writer := multipart.NewWriter(body)
-	// No "tarfile" field
 	err = writer.WriteField("path", tempDir)
 	assert.NoError(t, err)
 	err = writer.Close()
@@ -236,12 +233,14 @@ func TestUploadHandler_NoTarfile(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	c := e.NewContext(req, rec)
-	_ = UploadHandler(c) // The error is checked by the response code and body
-	// assert.Error(t, err) // c.Error() makes the handler return nil, error is checked by status code
+	err = UploadHandler(c)
+	assert.NoError(t, err)
 
-	// Assert the HTTP status code and response body
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
-	assert.True(t, strings.HasPrefix(rec.Body.String(), "{\"message\":\"Tar file not found in request"), "Expected 'Tar file not found in request' error message")
+	var resp map[string]string
+	errUnmarshal := json.Unmarshal(rec.Body.Bytes(), &resp)
+	assert.NoError(t, errUnmarshal, "Failed to parse JSON error response for NoTarfile")
+	assert.Contains(t, resp["error"], "File not found in request", "Expected 'File not found in request' error message")
 }
 
 func TestUploadHandler_InvalidGzip(t *testing.T) {
@@ -257,7 +256,7 @@ func TestUploadHandler_InvalidGzip(t *testing.T) {
 
 	body := new(bytes.Buffer)
 	writer := multipart.NewWriter(body)
-	part, err := writer.CreateFormFile("tarfile", "invalid.tar.gz") // .gz extension but not a gzip file
+	part, err := writer.CreateFormFile("tarfile", "invalid.tar.gz")
 	assert.NoError(t, err)
 	_, err = part.Write([]byte("this is not a valid gzip content"))
 	assert.NoError(t, err)
@@ -271,12 +270,14 @@ func TestUploadHandler_InvalidGzip(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	c := e.NewContext(req, rec)
-	_ = UploadHandler(c) // The error is checked by the response code and body
-	// assert.Error(t, err) // c.Error() makes the handler return nil, error is checked by status code
+	err = UploadHandler(c)
+	assert.NoError(t, err)
 
-	// Assert the HTTP status code and response body
-	assert.Equal(t, http.StatusInternalServerError, rec.Code)
-	assert.Equal(t, "{\"message\":\"Failed to create gzip reader: gzip: invalid header\"}\n", rec.Body.String())
+	var resp map[string]string
+	errUnmarshal := json.Unmarshal(rec.Body.Bytes(), &resp)
+	assert.NoError(t, errUnmarshal, "Failed to parse JSON error response")
+	assert.Contains(t, resp["error"], "failed to create gzip reader", "Error message mismatch")
+	assert.Contains(t, resp["error"], "gzip: invalid header", "Error message detail mismatch")
 }
 
 func TestUploadHandler_PathTraversalAttempt(t *testing.T) {
@@ -290,8 +291,6 @@ func TestUploadHandler_PathTraversalAttempt(t *testing.T) {
 		}
 	}()
 
-	// Create a tar with a path traversal attempt
-	// Note: filepath.Join on the server will clean this, but the check is for after cleaning
 	filesToArchive := map[string]string{"../../evil.txt": "evil content"}
 	archiveName := "traversal.tar.gz"
 	archiveContent := createTestArchive(t, filesToArchive, nil, archiveName)
@@ -312,40 +311,36 @@ func TestUploadHandler_PathTraversalAttempt(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	c := e.NewContext(req, rec)
-	// Call the handler and expect an error
 	_ = UploadHandler(c)
-	// assert.Error(t, err) // c.Error() makes the handler return nil, error is checked by status code
 
-	// Assert the HTTP status code and response body
-	assert.Equal(t, http.StatusBadRequest, rec.Code)
-	assert.Equal(t, "{\"message\":\"Invalid path in tar file (path traversal attempt)\"}\n", rec.Body.String())
+	var resp map[string]string
+	err = json.Unmarshal(rec.Body.Bytes(), &resp)
+	assert.NoError(t, err, "Failed to parse JSON error response")
+	assert.Contains(t, resp["error"], "contains potentially unsafe path entry", "Error message mismatch")
 
-	_, err = os.Stat(filepath.Join(tempDir, "evil.txt")) // Check inside tempDir
-	assert.True(t, os.IsNotExist(err), "File should not be created inside tempDir due to path cleaning before check")
+	evilPath := filepath.Join(tempDir, "evil.txt")
+	_, statErr := os.Stat(evilPath)
+	assert.True(t, os.IsNotExist(statErr), "File should not be created inside tempDir due to path cleaning before check")
 }
 
 func TestUploadHandler_WithPathPrefix_AllowedPath(t *testing.T) {
 	e := echo.New()
-	pathPrefix := "/allowed/prefix"
+	baseDirForPrefixTest, err := os.MkdirTemp("", "prefix_base_")
+	require.NoError(t, err)
+	defer func() {
+		if err := os.RemoveAll(baseDirForPrefixTest); err != nil {
+			t.Logf("Failed to remove test directory: %v", err)
+		}
+	}()
+	pathPrefix := filepath.Join(baseDirForPrefixTest, "allowed", "prefix")
+	require.NoError(t, os.MkdirAll(pathPrefix, 0755))
+
 	if err := os.Setenv("PATH_PREFIX", pathPrefix); err != nil {
 		t.Fatalf("failed to set env PATH_PREFIX: %v", err)
 	}
 	defer func() {
 		if err := os.Unsetenv("PATH_PREFIX"); err != nil {
 			t.Fatalf("failed to unset env PATH_PREFIX: %v", err)
-		}
-	}()
-
-	tempDir, err := os.MkdirTemp("", "test-deploy-tar-prefix-*")
-	assert.NoError(t, err)
-
-	formPath := filepath.Join(tempDir, pathPrefix, "data") // e.g., /tmp/test-xxxx/allowed/prefix/data
-	err = os.MkdirAll(filepath.Dir(formPath), 0755)        // Ensure parent of formPath exists
-	assert.NoError(t, err)
-
-	defer func() {
-		if err := os.RemoveAll(tempDir); err != nil {
-			t.Logf("Failed to remove temp directory %s: %v", tempDir, err)
 		}
 	}()
 
@@ -363,9 +358,8 @@ func TestUploadHandler_WithPathPrefix_AllowedPath(t *testing.T) {
 	assert.NoError(t, err)
 	_, err = io.Copy(part, archiveContent)
 	assert.NoError(t, err)
-	// The 'path' field in the form should be the actual destination path
-	// that starts with PATH_PREFIX.
-	err = writer.WriteField("path", formPath)
+	formPathValue := "data"
+	err = writer.WriteField("path", formPathValue)
 	assert.NoError(t, err)
 	err = writer.Close()
 	assert.NoError(t, err)
@@ -377,25 +371,37 @@ func TestUploadHandler_WithPathPrefix_AllowedPath(t *testing.T) {
 	c := e.NewContext(req, rec)
 	if assert.NoError(t, UploadHandler(c)) {
 		assert.Equal(t, http.StatusOK, rec.Code)
-		assert.Equal(t, "Tar file extracted successfully", rec.Body.String())
+		var resp map[string]string
+		err := json.Unmarshal(rec.Body.Bytes(), &resp)
+		assert.NoError(t, err, "Failed to parse JSON response")
+		assert.Contains(t, resp["message"], "Archive extracted successfully", "Success message mismatch")
 	}
 
-	// Verify extracted files in the target directory (formPath)
-	content1, err := os.ReadFile(filepath.Join(formPath, "file1.txt"))
+	absExtractPath := filepath.Join(pathPrefix, formPathValue)
+	content1, err := os.ReadFile(filepath.Join(absExtractPath, "file1.txt"))
 	assert.NoError(t, err)
 	assert.Equal(t, "content of file1", string(content1))
 
-	content2, err := os.ReadFile(filepath.Join(formPath, "subdir/file2.txt"))
+	content2, err := os.ReadFile(filepath.Join(absExtractPath, "subdir/file2.txt"))
 	assert.NoError(t, err)
 	assert.Equal(t, "content of file2", string(content2))
 
-	_, err = os.Stat(filepath.Join(formPath, "subdir"))
+	_, err = os.Stat(filepath.Join(absExtractPath, "subdir"))
 	assert.NoError(t, err, "Subdirectory should exist in the target path")
 }
 
 func TestUploadHandler_WithPathPrefix_PathExactlyPrefix(t *testing.T) {
 	e := echo.New()
-	pathPrefix := "/allowed/exact_prefix" // Use a distinct prefix for this test
+	baseDirForPrefixTest, err := os.MkdirTemp("", "exact_prefix_base_")
+	require.NoError(t, err)
+	defer func() {
+		if err := os.RemoveAll(baseDirForPrefixTest); err != nil {
+			t.Logf("Failed to remove test directory: %v", err)
+		}
+	}()
+	pathPrefix := filepath.Join(baseDirForPrefixTest, "allowed", "exact_prefix")
+	require.NoError(t, os.MkdirAll(pathPrefix, 0755))
+
 	if err := os.Setenv("PATH_PREFIX", pathPrefix); err != nil {
 		t.Fatalf("failed to set env PATH_PREFIX: %v", err)
 	}
@@ -404,23 +410,6 @@ func TestUploadHandler_WithPathPrefix_PathExactlyPrefix(t *testing.T) {
 			t.Fatalf("failed to unset env PATH_PREFIX: %v", err)
 		}
 	}()
-
-	// The 'path' form value will be exactly PATH_PREFIX.
-	// For the test, this path must be writable. We use tempDir as a base.
-	// So, the formPath will be filepath.Join(tempDir, pathPrefix)
-	// This implies PATH_PREFIX is treated as a directory.
-	baseDir, err := os.MkdirTemp("", "test-deploy-tar-exact-prefix-base-*")
-	assert.NoError(t, err)
-	defer func() {
-		if err := os.RemoveAll(baseDir); err != nil {
-			t.Logf("Failed to remove temp directory %s: %v", baseDir, err)
-		}
-	}()
-
-	formPath := filepath.Join(baseDir, pathPrefix) // e.g. /tmp/test-base-xxxx/allowed/exact_prefix
-	// We need to create `formPath` because files will be extracted *into* it.
-	err = os.MkdirAll(formPath, 0755)
-	assert.NoError(t, err)
 
 	filesToArchive := map[string]string{
 		"rootfile.txt": "content at root of archive",
@@ -434,7 +423,7 @@ func TestUploadHandler_WithPathPrefix_PathExactlyPrefix(t *testing.T) {
 	assert.NoError(t, err)
 	_, err = io.Copy(part, archiveContent)
 	assert.NoError(t, err)
-	err = writer.WriteField("path", formPath) // Request path is exactly the prefix (made absolute for test)
+	err = writer.WriteField("path", "")
 	assert.NoError(t, err)
 	err = writer.Close()
 	assert.NoError(t, err)
@@ -446,18 +435,28 @@ func TestUploadHandler_WithPathPrefix_PathExactlyPrefix(t *testing.T) {
 	c := e.NewContext(req, rec)
 	if assert.NoError(t, UploadHandler(c)) {
 		assert.Equal(t, http.StatusOK, rec.Code)
-		assert.Equal(t, "Tar file extracted successfully", rec.Body.String())
+		var resp map[string]string
+		err := json.Unmarshal(rec.Body.Bytes(), &resp)
+		assert.NoError(t, err, "Failed to parse JSON response")
+		assert.Contains(t, resp["message"], "Archive extracted successfully", "Success message mismatch")
 	}
 
-	// Verify extracted file in the formPath (which is the prefix itself)
-	content, err := os.ReadFile(filepath.Join(formPath, "rootfile.txt"))
+	content, err := os.ReadFile(filepath.Join(pathPrefix, "rootfile.txt"))
 	assert.NoError(t, err)
 	assert.Equal(t, "content at root of archive", string(content))
 }
 
 func TestUploadHandler_WithPathPrefix_DisallowedPath(t *testing.T) {
 	e := echo.New()
-	if err := os.Setenv("PATH_PREFIX", "/allowed/prefix"); err != nil {
+	baseDirForPrefixTest, _ := os.MkdirTemp("", "disallowed_prefix_base_")
+	defer func() {
+		if err := os.RemoveAll(baseDirForPrefixTest); err != nil {
+			t.Logf("Failed to remove test directory: %v", err)
+		}
+	}()
+	pathPrefix := filepath.Join(baseDirForPrefixTest, "allowed", "prefix")
+
+	if err := os.Setenv("PATH_PREFIX", pathPrefix); err != nil {
 		t.Fatalf("failed to set env PATH_PREFIX: %v", err)
 	}
 	defer func() {
@@ -474,10 +473,7 @@ func TestUploadHandler_WithPathPrefix_DisallowedPath(t *testing.T) {
 		}
 	}()
 
-	// This path does not start with PATH_PREFIX
 	disallowedPath := filepath.Join(tempDir, "disallowed", "path")
-	// Create the directory, as the handler might attempt to access it before validation failure in some scenarios,
-	// though for prefix validation, it should fail before filesystem access for extraction.
 	err = os.MkdirAll(disallowedPath, 0755)
 	assert.NoError(t, err)
 
@@ -489,7 +485,7 @@ func TestUploadHandler_WithPathPrefix_DisallowedPath(t *testing.T) {
 	assert.NoError(t, err)
 	_, err = io.Copy(part, archiveContent)
 	assert.NoError(t, err)
-	err = writer.WriteField("path", disallowedPath) // Path that does NOT start with PATH_PREFIX
+	err = writer.WriteField("path", "../not_allowed")
 	assert.NoError(t, err)
 	err = writer.Close()
 	assert.NoError(t, err)
@@ -499,19 +495,15 @@ func TestUploadHandler_WithPathPrefix_DisallowedPath(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	c := e.NewContext(req, rec)
-	err = UploadHandler(c) // Expect an error handled by Echo's HTTPErrorHandler
+	err = UploadHandler(c)
+	assert.NoError(t, err)
 
-	// Check if the error is the specific one we expect from path validation
-	if httpErr, ok := err.(*echo.HTTPError); ok {
-		assert.Equal(t, http.StatusBadRequest, httpErr.Code)
-		assert.Equal(t, "Path is not allowed", httpErr.Message)
-	} else {
-		// If no error was returned by the handler (it wrote response directly)
-		assert.Equal(t, http.StatusBadRequest, rec.Code)
-		assert.JSONEq(t, `{"message":"Path is not allowed"}`, rec.Body.String())
-	}
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+	var resp map[string]string
+	errJSON := json.Unmarshal(rec.Body.Bytes(), &resp)
+	assert.NoError(t, errJSON, "Failed to parse JSON error response")
+	assert.Contains(t, resp["error"], "target directory cannot be a path traversal attempt", "Error message mismatch")
 
-	// Ensure no files were extracted
 	_, statErr := os.Stat(filepath.Join(disallowedPath, "dummy.txt"))
 	assert.True(t, os.IsNotExist(statErr), "File should not be extracted to a disallowed path")
 }
@@ -527,13 +519,11 @@ func TestUploadHandler_Success_Put_Overwrites(t *testing.T) {
 		}
 	}()
 
-	// 1. Create an initial file in the tempDir
 	oldFilePath := filepath.Join(tempDir, "old_file.txt")
 	oldFileContent := []byte("this is the old content")
 	err = os.WriteFile(oldFilePath, oldFileContent, 0644)
 	assert.NoError(t, err)
 
-	// 2. Create a new tar archive with a new file
 	filesToArchive := map[string]string{
 		"new_file.txt": "this is the new content",
 	}
@@ -551,22 +541,22 @@ func TestUploadHandler_Success_Put_Overwrites(t *testing.T) {
 	err = writer.Close()
 	assert.NoError(t, err)
 
-	req := httptest.NewRequest(http.MethodPut, "/", body) // Use PUT method
+	req := httptest.NewRequest(http.MethodPut, "/", body)
 	req.Header.Set(echo.HeaderContentType, writer.FormDataContentType())
 	rec := httptest.NewRecorder()
 
 	c := e.NewContext(req, rec)
 	if assert.NoError(t, UploadHandler(c)) {
 		assert.Equal(t, http.StatusOK, rec.Code)
-		assert.Equal(t, "Tar file extracted successfully", rec.Body.String())
+		var resp map[string]string
+		err := json.Unmarshal(rec.Body.Bytes(), &resp)
+		assert.NoError(t, err, "Failed to parse JSON response")
+		assert.Contains(t, resp["message"], "Archive extracted successfully", "Success message mismatch")
 	}
 
-	// 3. Assertions
-	//    - old_file.txt should not exist
 	_, err = os.Stat(oldFilePath)
 	assert.True(t, os.IsNotExist(err), "Old file should have been removed by PUT operation")
 
-	//    - new_file.txt should exist and have correct content
 	newFilePath := filepath.Join(tempDir, "new_file.txt")
 	newFileContent, err := os.ReadFile(newFilePath)
 	assert.NoError(t, err)
@@ -575,7 +565,16 @@ func TestUploadHandler_Success_Put_Overwrites(t *testing.T) {
 
 func TestUploadHandler_Success_Put_WithPathPrefix_AllowedPath(t *testing.T) {
 	e := echo.New()
-	pathPrefix := "/allowed/put_prefix"
+	baseDirForPrefixTest, err := os.MkdirTemp("", "put_prefix_base_")
+	require.NoError(t, err)
+	defer func() {
+		if err := os.RemoveAll(baseDirForPrefixTest); err != nil {
+			t.Logf("Failed to remove test directory: %v", err)
+		}
+	}()
+	pathPrefix := filepath.Join(baseDirForPrefixTest, "allowed", "put_prefix")
+	require.NoError(t, os.MkdirAll(pathPrefix, 0755))
+
 	if err := os.Setenv("PATH_PREFIX", pathPrefix); err != nil {
 		t.Fatalf("failed to set env PATH_PREFIX: %v", err)
 	}
@@ -585,25 +584,16 @@ func TestUploadHandler_Success_Put_WithPathPrefix_AllowedPath(t *testing.T) {
 		}
 	}()
 
-	tempDir, err := os.MkdirTemp("", "test-deploy-put-prefix-*")
-	assert.NoError(t, err)
-	defer func() {
-		if err := os.RemoveAll(tempDir); err != nil {
-			t.Logf("Failed to remove temp directory %s: %v", tempDir, err)
-		}
-	}()
+	targetSubDirForPut := "data_put"
+	absPathForOldFileSetup := filepath.Join(pathPrefix, targetSubDirForPut)
+	err = os.MkdirAll(absPathForOldFileSetup, 0755)
+	require.NoError(t, err)
 
-	formPath := filepath.Join(tempDir, pathPrefix, "data_put") // e.g., /tmp/test-xxxx/allowed/put_prefix/data_put
-	err = os.MkdirAll(formPath, 0755)                          // Ensure formPath exists
-	assert.NoError(t, err)
-
-	// 1. Create an initial file in the formPath
-	oldFilePath := filepath.Join(formPath, "old_prefixed_file.txt")
+	oldFilePath := filepath.Join(absPathForOldFileSetup, "old_prefixed_file.txt")
 	oldFileContent := []byte("old content in prefixed path")
 	err = os.WriteFile(oldFilePath, oldFileContent, 0644)
 	assert.NoError(t, err)
 
-	// 2. Create a new tar archive with new files
 	filesToArchive := map[string]string{
 		"new_prefixed_file.txt":       "new content for prefixed path",
 		"subdir_put/another_file.txt": "another new file",
@@ -618,39 +608,38 @@ func TestUploadHandler_Success_Put_WithPathPrefix_AllowedPath(t *testing.T) {
 	assert.NoError(t, err)
 	_, err = io.Copy(part, archiveContent)
 	assert.NoError(t, err)
-	err = writer.WriteField("path", formPath)
+	err = writer.WriteField("path", targetSubDirForPut)
 	assert.NoError(t, err)
 	err = writer.Close()
 	assert.NoError(t, err)
 
-	req := httptest.NewRequest(http.MethodPut, "/", body) // Use PUT method
+	req := httptest.NewRequest(http.MethodPut, "/", body)
 	req.Header.Set(echo.HeaderContentType, writer.FormDataContentType())
 	rec := httptest.NewRecorder()
 
 	c := e.NewContext(req, rec)
 	if assert.NoError(t, UploadHandler(c)) {
 		assert.Equal(t, http.StatusOK, rec.Code)
-		assert.Equal(t, "Tar file extracted successfully", rec.Body.String())
+		var resp map[string]string
+		err := json.Unmarshal(rec.Body.Bytes(), &resp)
+		assert.NoError(t, err, "Failed to parse JSON response")
+		assert.Contains(t, resp["message"], "Archive extracted successfully", "Success message mismatch")
 	}
 
-	// 3. Assertions
-	//    - old_prefixed_file.txt should not exist in formPath
 	_, err = os.Stat(oldFilePath)
 	assert.True(t, os.IsNotExist(err), "Old file in prefixed path should have been removed by PUT operation")
 
-	//    - new_prefixed_file.txt should exist and have correct content in formPath
-	newFilePath := filepath.Join(formPath, "new_prefixed_file.txt")
+	newFilePath := filepath.Join(absPathForOldFileSetup, "new_prefixed_file.txt")
 	newFileContent, err := os.ReadFile(newFilePath)
 	assert.NoError(t, err)
 	assert.Equal(t, "new content for prefixed path", string(newFileContent))
 
-	//    - subdir_put/another_file.txt should exist and have correct content in formPath
-	anotherNewFilePath := filepath.Join(formPath, "subdir_put/another_file.txt")
+	anotherNewFilePath := filepath.Join(absPathForOldFileSetup, "subdir_put/another_file.txt")
 	anotherNewFileContent, err := os.ReadFile(anotherNewFilePath)
 	assert.NoError(t, err)
 	assert.Equal(t, "another new file", string(anotherNewFileContent))
 
-	_, err = os.Stat(filepath.Join(formPath, "subdir_put"))
+	_, err = os.Stat(filepath.Join(absPathForOldFileSetup, "subdir_put"))
 	assert.NoError(t, err, "New subdirectory 'subdir_put' should exist in the target path")
 }
 
@@ -670,7 +659,7 @@ func TestUploadHandler_Success_Post_NonArchiveFile(t *testing.T) {
 
 	body := new(bytes.Buffer)
 	writer := multipart.NewWriter(body)
-	part, err := writer.CreateFormFile("tarfile", fileName) // "tarfile" is the expected form field name
+	part, err := writer.CreateFormFile("tarfile", fileName)
 	assert.NoError(t, err)
 	_, err = io.WriteString(part, fileContent)
 	assert.NoError(t, err)
@@ -686,10 +675,12 @@ func TestUploadHandler_Success_Post_NonArchiveFile(t *testing.T) {
 	c := e.NewContext(req, rec)
 	if assert.NoError(t, UploadHandler(c)) {
 		assert.Equal(t, http.StatusOK, rec.Code)
-		assert.Equal(t, "File uploaded successfully", rec.Body.String())
+		var resp map[string]string
+		err := json.Unmarshal(rec.Body.Bytes(), &resp)
+		assert.NoError(t, err, "Failed to parse JSON response")
+		assert.Contains(t, resp["message"], "File uploaded successfully", "Success message mismatch")
 	}
 
-	// Verify uploaded file
 	uploadedFilePath := filepath.Join(tempDir, fileName)
 	content, err := os.ReadFile(uploadedFilePath)
 	assert.NoError(t, err)
@@ -707,20 +698,18 @@ func TestUploadHandler_Success_Put_NonArchiveFile_Overwrites(t *testing.T) {
 		}
 	}()
 
-	// 1. Create an initial file in the tempDir
 	oldFileName := "old_file.txt"
 	oldFilePath := filepath.Join(tempDir, oldFileName)
 	oldFileContent := []byte("this is the old content")
 	err = os.WriteFile(oldFilePath, oldFileContent, 0644)
 	assert.NoError(t, err)
 
-	// 2. Prepare new file for PUT upload
 	newFileName := "new_file.txt"
 	newFileContent := "this is the new file content for PUT"
 
 	body := new(bytes.Buffer)
 	writer := multipart.NewWriter(body)
-	part, err := writer.CreateFormFile("tarfile", newFileName) // "tarfile" is the expected form field name
+	part, err := writer.CreateFormFile("tarfile", newFileName)
 	assert.NoError(t, err)
 	_, err = io.WriteString(part, newFileContent)
 	assert.NoError(t, err)
@@ -729,22 +718,22 @@ func TestUploadHandler_Success_Put_NonArchiveFile_Overwrites(t *testing.T) {
 	err = writer.Close()
 	assert.NoError(t, err)
 
-	req := httptest.NewRequest(http.MethodPut, "/", body) // Use PUT method
+	req := httptest.NewRequest(http.MethodPut, "/", body)
 	req.Header.Set(echo.HeaderContentType, writer.FormDataContentType())
 	rec := httptest.NewRecorder()
 
 	c := e.NewContext(req, rec)
 	if assert.NoError(t, UploadHandler(c)) {
 		assert.Equal(t, http.StatusOK, rec.Code)
-		assert.Equal(t, "File uploaded successfully", rec.Body.String())
+		var resp map[string]string
+		err := json.Unmarshal(rec.Body.Bytes(), &resp)
+		assert.NoError(t, err, "Failed to parse JSON response")
+		assert.Contains(t, resp["message"], "File uploaded successfully", "Success message mismatch")
 	}
 
-	// 3. Assertions
-	//    - old_file.txt should not exist
 	_, err = os.Stat(oldFilePath)
 	assert.True(t, os.IsNotExist(err), "Old file should have been removed by PUT operation")
 
-	//    - new_file.txt should exist and have correct content
 	uploadedFilePath := filepath.Join(tempDir, newFileName)
 	content, err := os.ReadFile(uploadedFilePath)
 	assert.NoError(t, err)

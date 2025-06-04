@@ -23,7 +23,6 @@ func main() {
 	e := echo.New()
 	ctx := context.Background()
 
-	// Set up OpenTelemetry
 	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
 		exporter, err := otlptracegrpc.New(ctx)
 		if err != nil {
@@ -56,20 +55,15 @@ func main() {
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
 
-	// Set up upload route
 	e.POST("/", handler.UploadHandler)
 	e.PUT("/", handler.UploadHandler)
 
-	// Directory listing endpoint
 	e.GET("/list", handler.ListDirectoryHandler)
 
-	// Health check endpoint
 	e.GET("/healthz", handler.Healthz)
 
-	// Start gRPC server in a separate goroutine
 	go startGRPCServer()
 
-	// Start the Echo server
 	e.Logger.Fatal(e.Start(":8080"))
 }
 

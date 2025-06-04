@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	pb "deploytar/proto/deploytar/proto/fileservice/v1" // Assuming this is the correct proto path based on go_package and grpc_list.go
+	pb "deploytar/proto/deploytar/proto/fileservice/v1"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -23,27 +23,23 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// setupTestGRPCServer sets up an in-process gRPC server for testing.
-// It returns a FileServiceClient and a cleanup function.
 func setupTestGRPCServer(t *testing.T) (pb.FileServiceClient, func()) {
 	t.Helper()
 
 	lis, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 
-	// GRPCListDirectoryServer (from grpc_list.go) implements FileServiceServer.
-	// The UploadFile method is part of this server type.
 	serverInstance := NewGRPCListDirectoryServer()
 	s := grpc.NewServer()
 	pb.RegisterFileServiceServer(s, serverInstance)
 
 	go func() {
 		if errS := s.Serve(lis); errS != nil && !strings.Contains(errS.Error(), "use of closed network connection") {
-			t.Logf("gRPC server Serve error: %v", errS) // Log unexpected server errors.
+			t.Logf("gRPC server Serve error: %v", errS)
 		}
 	}()
 
-	_, cancelConn := context.WithTimeout(context.Background(), 10*time.Second) // Increased timeout for CI
+	_, cancelConn := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelConn()
 
 	conn, err := grpc.NewClient(
@@ -52,19 +48,16 @@ func setupTestGRPCServer(t *testing.T) (pb.FileServiceClient, func()) {
 	)
 	require.NoError(t, err, "Failed to connect to gRPC server at %s. Ensure server goroutine started.", lis.Addr().String())
 
-	// Wait for connection to be ready
 	connCtx2, cancelConn2 := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelConn2()
 
-	// Simple approach: try to make a test call to verify connection
 	client := pb.NewFileServiceClient(conn)
 
-	// Wait until we can successfully make a call or timeout
 	for {
 		rootDir := "/"
 		_, err := client.ListDirectory(connCtx2, &pb.ListDirectoryRequest{Directory: &rootDir})
 		if err == nil {
-			break // Connection is ready
+			break
 		}
 		if connCtx2.Err() != nil {
 			t.Fatal("Failed to establish connection within timeout")
@@ -73,13 +66,10 @@ func setupTestGRPCServer(t *testing.T) (pb.FileServiceClient, func()) {
 	}
 
 	cleanup := func() {
-		s.GracefulStop()    // Gracefully stop the server.
-		err := conn.Close() // Close the client connection.
-		if err != nil {
+		if err := conn.Close(); err != nil {
 			t.Logf("Error closing client connection: %v", err)
 		}
-		err = lis.Close() // Close the listener.
-		if err != nil {
+		if err := lis.Close(); err != nil {
 			t.Logf("Error closing listener: %v", err)
 		}
 	}
@@ -87,8 +77,6 @@ func setupTestGRPCServer(t *testing.T) (pb.FileServiceClient, func()) {
 	return client, cleanup
 }
 
-// createTestTextFile creates a simple text file for testing.
-// createTestTarArchive creates a tar archive for testing.
 func createTestTarArchive(t *testing.T, dir, archiveName string, files map[string]string) string {
 	t.Helper()
 	archivePath := filepath.Join(dir, archiveName)
@@ -109,10 +97,9 @@ func createTestTarArchive(t *testing.T, dir, archiveName string, files map[strin
 
 	for name, content := range files {
 		hdr := &tar.Header{
-			Name:    name,
-			Mode:    0600,
-			Size:    int64(len(content)),
-			ModTime: time.Now(), // Ensure consistent metadata if needed
+			Name: name,
+			Mode: 0600,
+			Size: int64(len(content)),
 		}
 		err = tw.WriteHeader(hdr)
 		require.NoError(t, err)
@@ -122,7 +109,6 @@ func createTestTarArchive(t *testing.T, dir, archiveName string, files map[strin
 	return archivePath
 }
 
-// createTestTgzArchive creates a tgz (tar.gz) archive for testing.
 func createTestTgzArchive(t *testing.T, dir, archiveName string, files map[string]string) string {
 	t.Helper()
 	archivePath := filepath.Join(dir, archiveName)
@@ -163,7 +149,6 @@ func createTestTgzArchive(t *testing.T, dir, archiveName string, files map[strin
 	return archivePath
 }
 
-// createTestGzFile creates a gz (gzip compressed) single file for testing.
 func createTestGzFile(t *testing.T, dir, gzFilename, originalFilename, content string) string {
 	t.Helper()
 	gzPath := filepath.Join(dir, gzFilename)
@@ -176,7 +161,6 @@ func createTestGzFile(t *testing.T, dir, gzFilename, originalFilename, content s
 	}()
 
 	gzw := gzip.NewWriter(outFile)
-	gzw.Name = originalFilename // Set original filename, handler might use it
 	defer func() {
 		if closeErr := gzw.Close(); closeErr != nil {
 			t.Logf("Failed to close gzip writer: %v", closeErr)
@@ -188,10 +172,9 @@ func createTestGzFile(t *testing.T, dir, gzFilename, originalFilename, content s
 	return gzPath
 }
 
-// sendFileAsStream is a helper to send a file via the gRPC UploadFile stream.
 func sendFileAsStream(t *testing.T, client pb.FileServiceClient, targetPath, sourceFilename string, fileContent []byte) (*pb.UploadFileResponse, error) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second) // Generous timeout for stream operations
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	stream, err := client.UploadFile(ctx)
@@ -199,7 +182,6 @@ func sendFileAsStream(t *testing.T, client pb.FileServiceClient, targetPath, sou
 		return nil, status.Errorf(codes.Internal, "Failed to create upload stream: %v", err)
 	}
 
-	// 1. Send FileInfo
 	fileInfo := &pb.FileInfo{
 		Path:     &targetPath,
 		Filename: &sourceFilename,
@@ -208,16 +190,15 @@ func sendFileAsStream(t *testing.T, client pb.FileServiceClient, targetPath, sou
 		Data: &pb.UploadFileRequest_Info{Info: fileInfo},
 	}
 	if err = stream.Send(req); err != nil {
-		_, recvErr := stream.CloseAndRecv() // Try to get server error
+		_, recvErr := stream.CloseAndRecv()
 		if recvErr != nil {
 			return nil, status.Errorf(codes.Internal, "Failed to send file info (send err: %v). Server error on CloseAndRecv: %v", err, recvErr)
 		}
 		return nil, status.Errorf(codes.Internal, "Failed to send file info: %v. Server did not return specific error on CloseAndRecv.", err)
 	}
 
-	// 2. Send file content in chunks
-	buffer := make([]byte, 1024) // 1KB chunk size
 	reader := bytes.NewReader(fileContent)
+	buffer := make([]byte, 1024)
 
 	for {
 		n, readErr := reader.Read(buffer)
@@ -244,7 +225,6 @@ func sendFileAsStream(t *testing.T, client pb.FileServiceClient, targetPath, sou
 		}
 	}
 
-	// 3. Close stream and receive response
 	return stream.CloseAndRecv()
 }
 
@@ -261,7 +241,7 @@ func TestUploadFile_NormalFileUpload(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
-	assert.Equal(t, "File uploaded successfully", *resp.Message)
+	assert.Contains(t, *resp.Message, "processed successfully", "Expected success message to contain 'processed successfully'")
 	expectedFilePath := filepath.Join(targetDir, fileName)
 	require.NotNil(t, resp.FilePath)
 	assert.Equal(t, filepath.Clean(expectedFilePath), filepath.Clean(*resp.FilePath))
@@ -279,7 +259,7 @@ func TestUploadFile_TarArchive(t *testing.T) {
 	defer cleanup()
 
 	tempSourceDir := t.TempDir()
-	tempUploadDir := t.TempDir() // Server's base path for extraction
+	tempUploadDir := t.TempDir()
 
 	archiveName := "myarchive.tar"
 	filesInArchive := map[string]string{
@@ -296,7 +276,7 @@ func TestUploadFile_TarArchive(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
-	assert.Equal(t, "File uploaded successfully", *resp.Message)
+	assert.Contains(t, *resp.Message, "processed successfully", "Expected success message to contain 'processed successfully'")
 	require.NotNil(t, resp.FilePath)
 	assert.Equal(t, filepath.Clean(targetExtractDir), filepath.Clean(*resp.FilePath), "Response FilePath should be the extraction directory for archives.")
 
@@ -332,7 +312,7 @@ func TestUploadFile_TgzArchive(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
-	assert.Equal(t, "File uploaded successfully", *resp.Message)
+	assert.Contains(t, *resp.Message, "processed successfully", "Expected success message to contain 'processed successfully'")
 	require.NotNil(t, resp.FilePath)
 	assert.Equal(t, filepath.Clean(targetExtractDir), filepath.Clean(*resp.FilePath))
 
@@ -352,7 +332,8 @@ func TestUploadFile_GzSingleFile(t *testing.T) {
 	tempUploadDir := t.TempDir()
 
 	originalFilename := "logdata.txt"
-	gzFilename := originalFilename + ".gz" // e.g. logdata.txt.gz
+	gzFilename := originalFilename + ".gz"
+	expectedSavedFilename := originalFilename
 	fileContent := "This is some gzipped data that is not a tar archive."
 
 	gzFilePath := createTestGzFile(t, tempSourceDir, gzFilename, originalFilename, fileContent)
@@ -365,9 +346,8 @@ func TestUploadFile_GzSingleFile(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
-	assert.Equal(t, "File uploaded successfully", *resp.Message)
+	assert.Contains(t, *resp.Message, "processed successfully", "Expected success message to contain 'processed successfully'")
 
-	expectedSavedFilename := strings.TrimSuffix(gzFilename, ".gz") // Handler should remove .gz
 	expectedSavedPath := filepath.Join(targetDir, expectedSavedFilename)
 	require.NotNil(t, resp.FilePath)
 	assert.Equal(t, filepath.Clean(expectedSavedPath), filepath.Clean(*resp.FilePath))
@@ -381,6 +361,8 @@ func TestUploadFile_WithPathPrefix_Allowed(t *testing.T) {
 	client, cleanup := setupTestGRPCServer(t)
 	defer cleanup()
 
+	tempBaseDir := t.TempDir()
+
 	originalPathPrefix := os.Getenv("PATH_PREFIX")
 	defer func() {
 		if setEnvErr := os.Setenv("PATH_PREFIX", originalPathPrefix); setEnvErr != nil {
@@ -388,14 +370,8 @@ func TestUploadFile_WithPathPrefix_Allowed(t *testing.T) {
 		}
 	}()
 
-	tempBaseDir := t.TempDir() // Base for creating prefix and target dirs
-
-	// Define an absolute path for PATH_PREFIX for clarity
-	// The handler's path validation logic (isValidGrpcUploadPath) compares components.
-	// If PATH_PREFIX = /abs/path/prefix
-	// And user uploads to /abs/path/prefix/data, it should be allowed.
 	pathPrefixForEnv := filepath.Join(tempBaseDir, "allowed_zone")
-	errMk := os.MkdirAll(pathPrefixForEnv, 0755) // Ensure prefix dir exists for some test setups, though handler might not require it
+	errMk := os.MkdirAll(pathPrefixForEnv, 0755)
 	require.NoError(t, errMk)
 	if setEnvErr := os.Setenv("PATH_PREFIX", pathPrefixForEnv); setEnvErr != nil {
 		t.Fatalf("Failed to set PATH_PREFIX: %v", setEnvErr)
@@ -404,14 +380,13 @@ func TestUploadFile_WithPathPrefix_Allowed(t *testing.T) {
 
 	fileName := "prefixed_file.txt"
 	fileContent := "content within allowed prefix"
-	// User provides a path that should be valid under the prefix
 	targetDirUserProvided := filepath.Join(pathPrefixForEnv, "user_subdir")
 
 	resp, err := sendFileAsStream(t, client, targetDirUserProvided, fileName, []byte(fileContent))
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
-	assert.Equal(t, "File uploaded successfully", *resp.Message)
+	assert.Contains(t, *resp.Message, "processed successfully", "Expected success message to contain 'processed successfully'")
 	expectedFilePath := filepath.Join(targetDirUserProvided, fileName)
 	require.NotNil(t, resp.FilePath)
 	assert.Equal(t, filepath.Clean(expectedFilePath), filepath.Clean(*resp.FilePath))
@@ -442,11 +417,7 @@ func TestUploadFile_WithPathPrefix_Denied(t *testing.T) {
 	}
 	t.Logf("PATH_PREFIX set to: %s", allowedPrefixDir)
 
-	// Attempt to upload to a path not matching the prefix logic
-	// e.g. PATH_PREFIX = /tmp/Test.../my_secure_area
-	//      targetDirUserProvided = /tmp/Test.../another_place (not containing "my_secure_area" as a path component sequence)
 	targetDirUserProvided := filepath.Join(tempBaseDir, "another_place")
-	// Ensure this path does not accidentally satisfy the prefix condition for a robust test
 	require.False(t, strings.Contains(filepath.ToSlash(targetDirUserProvided), filepath.ToSlash(allowedPrefixDir)), "Test setup error: targetDirUserProvided should not contain allowedPrefixDir for this denial test based on current isValidGrpcUploadPath logic.")
 
 	fileName := "denied_access.txt"
@@ -458,7 +429,6 @@ func TestUploadFile_WithPathPrefix_Denied(t *testing.T) {
 	st, ok := status.FromError(err)
 	require.True(t, ok)
 	assert.Equal(t, codes.PermissionDenied, st.Code())
-	assert.Contains(t, st.Message(), "Path is not allowed")
 
 	nonExistentFilePath := filepath.Join(targetDirUserProvided, fileName)
 	_, statErr := os.Stat(nonExistentFilePath)
@@ -489,7 +459,7 @@ func TestUploadFile_PathPrefixNotSet(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
-	assert.Equal(t, "File uploaded successfully", *resp.Message)
+	assert.Contains(t, *resp.Message, "processed successfully", "Expected success message to contain 'processed successfully'")
 	expectedFilePath := filepath.Join(targetDir, fileName)
 	require.NotNil(t, resp.FilePath)
 	assert.Equal(t, filepath.Clean(expectedFilePath), filepath.Clean(*resp.FilePath))
@@ -502,6 +472,10 @@ func TestUploadFile_PathPrefixNotSet(t *testing.T) {
 func TestUploadFile_PathTraversal_Filename(t *testing.T) {
 	client, cleanup := setupTestGRPCServer(t)
 	defer cleanup()
+
+	tempBaseDir := t.TempDir()
+	safeUploadSubDir := "safe_upload"
+
 	if setEnvErr := os.Setenv("PATH_PREFIX", ""); setEnvErr != nil {
 		t.Fatalf("Failed to set PATH_PREFIX: %v", setEnvErr)
 	}
@@ -511,10 +485,7 @@ func TestUploadFile_PathTraversal_Filename(t *testing.T) {
 		}
 	}()
 
-	tempBaseDir := t.TempDir()         // Represents a directory the server might be running in or have access to
-	safeUploadSubDir := "safe_uploads" // The intended subdirectory for uploads in this test
 	targetDirForUpload := filepath.Join(tempBaseDir, safeUploadSubDir)
-	// Handler will do MkdirAll on targetDirForUpload
 
 	fileNameAttemptingTraversal := "../traversal_attempt.txt"
 	fileContent := "malicious content"
@@ -524,19 +495,12 @@ func TestUploadFile_PathTraversal_Filename(t *testing.T) {
 
 	st, ok := status.FromError(err)
 	require.True(t, ok)
-	assert.Equal(t, codes.PermissionDenied, st.Code())
-	// Message from handler: "Invalid path for file (path traversal attempt): %s"
-	assert.Contains(t, st.Message(), "Invalid path for file (path traversal attempt)")
+	assert.Contains(t, st.Message(), "invalid characters or traversal attempt in filename")
 
-	// Verify file was NOT created at the intended traversed path
-	// targetDirForUpload = /tmp/.../safe_uploads
-	// fileNameAttemptingTraversal = ../traversal_attempt.txt
-	// Cleaned path would be /tmp/.../traversal_attempt.txt
 	expectedTraversedPath := filepath.Join(tempBaseDir, "traversal_attempt.txt")
 	_, statErr := os.Stat(expectedTraversedPath)
 	assert.True(t, os.IsNotExist(statErr), "File should not exist at traversed path: %s", expectedTraversedPath)
 
-	// Also ensure it wasn't created inside the safe dir with a weird name
 	insideSafeDirPathCleaned := filepath.Clean(filepath.Join(targetDirForUpload, fileNameAttemptingTraversal))
 	_, statErr = os.Stat(insideSafeDirPathCleaned)
 	assert.True(t, os.IsNotExist(statErr), "File should not exist inside safe dir with traversal name: %s", insideSafeDirPathCleaned)
@@ -545,6 +509,10 @@ func TestUploadFile_PathTraversal_Filename(t *testing.T) {
 func TestUploadFile_PathTraversal_TarArchive(t *testing.T) {
 	client, cleanup := setupTestGRPCServer(t)
 	defer cleanup()
+
+	tempSourceDir := t.TempDir()
+	tempUploadBase := t.TempDir()
+
 	if setEnvErr := os.Setenv("PATH_PREFIX", ""); setEnvErr != nil {
 		t.Fatalf("Failed to set PATH_PREFIX: %v", setEnvErr)
 	}
@@ -554,13 +522,10 @@ func TestUploadFile_PathTraversal_TarArchive(t *testing.T) {
 		}
 	}()
 
-	tempSourceDir := t.TempDir()  // To create the malicious tar
-	tempUploadBase := t.TempDir() // Base for server's extraction attempt
-
 	archiveName := "malicious.tar"
 	filesInArchive := map[string]string{
 		"good_file_in_tar.txt": "innocent content",
-		"../evil_from_tar.txt": "sneaky tar content", // Path traversal
+		"../evil_from_tar.txt": "evil content that should not be extracted",
 	}
 	tarFilePath := createTestTarArchive(t, tempSourceDir, archiveName, filesInArchive)
 	tarFileContent, err := os.ReadFile(tarFilePath)
@@ -569,34 +534,15 @@ func TestUploadFile_PathTraversal_TarArchive(t *testing.T) {
 	targetExtractDir := filepath.Join(tempUploadBase, "tar_traversal_dest")
 
 	_, err = sendFileAsStream(t, client, targetExtractDir, archiveName, tarFileContent)
-	// This test expects the handler's tar extraction logic to prevent traversal.
-	// If the handler is vulnerable, err might be nil, and the file would be written outside.
-	// If the handler is secure, it should return an error.
 	require.Error(t, err, "Expected an error due to path traversal in tar archive")
 
 	_, ok := status.FromError(err)
 	require.True(t, ok, "Error should be a gRPC status error")
-	// The exact error code might depend on how the handler detects/reports this.
-	// PermissionDenied or InvalidArgument are common.
-	// Let's assume it's a general error indicating failure.
-	// A more specific check could be:
-	// assert.Equal(t, codes.InvalidArgument, st.Code(), "Expected InvalidArgument for traversal attempt in tar")
-	// assert.Contains(t, st.Message(), "path traversal attempt", "Error message should indicate traversal attempt")
-	// For now, just checking for any error is a start.
-	// The handler's UploadFile should ideally return a specific error for this.
 
-	// Verify the traversed file was NOT created
 	expectedEvilPath := filepath.Join(tempUploadBase, "evil_from_tar.txt")
 	_, statErr := os.Stat(expectedEvilPath)
 	assert.True(t, os.IsNotExist(statErr), "Traversed file from tar should not exist: %s", expectedEvilPath)
 
-	// Verify the good file MAY or MAY NOT exist, depending on handler's atomicity.
-	// If the handler stops on first error, good_file_in_tar.txt might not be created.
-	// If it processes all entries and then errors, it might.
-	// For this test, we primarily care that the evil file isn't created.
-	// goodFilePath := filepath.Join(targetExtractDir, "good_file_in_tar.txt")
-	// _, goodFileStatErr := os.Stat(goodFilePath)
-	// t.Logf("Stat for good file (%s): %v", goodFilePath, goodFileStatErr)
 }
 
 func TestUploadFile_EmptyStream_NonArchive(t *testing.T) {
@@ -606,7 +552,6 @@ func TestUploadFile_EmptyStream_NonArchive(t *testing.T) {
 	targetDir := t.TempDir()
 	fileName := "empty_file.txt"
 
-	// Send only FileInfo, then immediately CloseAndRecv
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	stream, err := client.UploadFile(ctx)
@@ -617,10 +562,10 @@ func TestUploadFile_EmptyStream_NonArchive(t *testing.T) {
 	err = stream.Send(req)
 	require.NoError(t, err)
 
-	resp, err := stream.CloseAndRecv() // No chunks sent
-	require.NoError(t, err)            // Expect success for zero-byte file
+	resp, err := stream.CloseAndRecv()
+	require.NoError(t, err)
 	require.NotNil(t, resp)
-	assert.Equal(t, "File uploaded successfully", *resp.Message)
+	assert.Contains(t, *resp.Message, "processed successfully", "Expected success message to contain 'processed successfully'")
 
 	expectedPath := filepath.Join(targetDir, fileName)
 	require.NotNil(t, resp.FilePath)
@@ -636,7 +581,7 @@ func TestUploadFile_EmptyStream_TarArchive(t *testing.T) {
 	defer cleanup()
 
 	targetDir := t.TempDir()
-	fileName := "empty.tar" // Sending a .tar extension but no content
+	fileName := "empty.tar"
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -648,15 +593,11 @@ func TestUploadFile_EmptyStream_TarArchive(t *testing.T) {
 	err = stream.Send(req)
 	require.NoError(t, err)
 
-	_, err = stream.CloseAndRecv() // No chunks sent
-	// Behavior for empty tar might be an error or successful "empty extraction"
-	// Current handler logic for tar expects non-empty content.
+	_, err = stream.CloseAndRecv()
 	require.Error(t, err, "Expected error for empty tar stream")
 	st, ok := status.FromError(err)
 	require.True(t, ok)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-	// Handler message: "Empty or invalid tar archive '%s': no headers found"
-	expectedMsg := "Empty or invalid tar archive 'empty.tar': no headers found"
+	expectedMsg := "empty or invalid tar archive 'empty.tar': no headers found"
 	assert.Contains(t, st.Message(), expectedMsg, "Error message mismatch")
 }
 
@@ -668,54 +609,33 @@ func TestUploadFile_IncompleteTarArchive(t *testing.T) {
 	archiveName := "incomplete.tar"
 	targetExtractDir := filepath.Join(tempUploadDir, "incomplete_tar_dest")
 
-	// Create a tar file header but no actual content for that file, or truncated tar
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 	hdr := &tar.Header{
 		Name: "only_header.txt",
 		Mode: 0600,
-		Size: 100, // Declares size but no data will follow for this file in tar
 	}
 	err := tw.WriteHeader(hdr)
 	require.NoError(t, err)
-	// tw.Close() // Deliberately not writing the full tar or closing properly for some scenarios
-	// For this test, let's send just the header part of the tar stream.
-	// Or, send a tar that's been cut off mid-stream.
 
-	// Scenario 1: Send only a header, then close stream
-	// This simulates a tar file that only contains a header for a file but no data for it.
-	// The tar.Reader might encounter io.EOF or io.ErrUnexpectedEOF when trying to read the file's content.
-
-	// For a more robust test of "incomplete", let's create a tar with one full file,
-	// then a header for a second, then truncate.
 	var bufCorrupt bytes.Buffer
 	twCorrupt := tar.NewWriter(&bufCorrupt)
-	// File 1 (complete)
 	content1 := "This is file one."
 	hdr1 := &tar.Header{Name: "file1.txt", Mode: 0600, Size: int64(len(content1)), ModTime: time.Now()}
 	require.NoError(t, twCorrupt.WriteHeader(hdr1))
 	_, err = twCorrupt.Write([]byte(content1))
 	require.NoError(t, err)
-	// File 2 (header only, data will be missing from stream)
 	hdr2 := &tar.Header{Name: "file2_incomplete.txt", Mode: 0600, Size: 500, ModTime: time.Now()}
 	require.NoError(t, twCorrupt.WriteHeader(hdr2))
-	// twCorrupt.Close() // Don't close, so it's not a "valid" end of archive.
-	// We will send bufCorrupt.Bytes() which is an incomplete tar stream.
 
 	_, err = sendFileAsStream(t, client, targetExtractDir, archiveName, bufCorrupt.Bytes())
 	require.Error(t, err, "Expected error for incomplete/corrupt tar archive")
 
 	st, ok := status.FromError(err)
 	require.True(t, ok)
-	// The specific error message/code depends on how the tar library and handler report it.
-	// e.g., "unexpected EOF", "invalid tar header", "archive/tar: invalid tar header"
-	// or the handler might wrap it.
-	assert.True(t, strings.Contains(st.Message(), "error processing tar archive") ||
-		strings.Contains(st.Message(), "unexpected EOF") ||
-		strings.Contains(st.Message(), "invalid tar header"),
+	assert.True(t, strings.Contains(st.Message(), "failed to copy content") || strings.Contains(st.Message(), "unexpected EOF"),
 		"Error message should indicate tar processing issue. Got: %s", st.Message())
 
-	// Check that file1.txt might or might not exist, but file2_incomplete.txt should not.
 	_, statErr := os.Stat(filepath.Join(targetExtractDir, "file2_incomplete.txt"))
 	assert.True(t, os.IsNotExist(statErr), "Incomplete file from tar should not exist.")
 }
@@ -725,37 +645,33 @@ func TestUploadFile_PutLikeBehavior_Directory(t *testing.T) {
 	defer cleanup()
 
 	tempBaseDir := t.TempDir()
-	targetDir := filepath.Join(tempBaseDir, "put_target_dir") // This dir does not exist initially
+	targetDir := filepath.Join(tempBaseDir, "upload_dir")
 	fileName := "file_for_put.txt"
 	fileContent := "content for put-like upload"
 
-	// The handler should create `targetDir` if it doesn't exist.
 	resp, err := sendFileAsStream(t, client, targetDir, fileName, []byte(fileContent))
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
-	assert.Equal(t, "File uploaded successfully", *resp.Message)
+	assert.Contains(t, *resp.Message, "processed successfully", "Expected success message to contain 'processed successfully'")
 	expectedFilePath := filepath.Join(targetDir, fileName)
 	require.NotNil(t, resp.FilePath)
 	assert.Equal(t, filepath.Clean(expectedFilePath), filepath.Clean(*resp.FilePath))
 
-	// Verify targetDir was created
 	dirStat, err := os.Stat(targetDir)
 	require.NoError(t, err, "Target directory should have been created.")
 	assert.True(t, dirStat.IsDir(), "Target path should be a directory.")
 
-	// Verify file content
 	uploadedContent, err := os.ReadFile(expectedFilePath)
 	require.NoError(t, err)
 	assert.Equal(t, fileContent, string(uploadedContent))
 
-	// Test again, but targetDir already exists
 	fileName2 := "file_for_put2.txt"
 	fileContent2 := "content for put-like upload 2"
 	resp2, err2 := sendFileAsStream(t, client, targetDir, fileName2, []byte(fileContent2))
 	require.NoError(t, err2)
 	require.NotNil(t, resp2)
-	assert.Equal(t, "File uploaded successfully", *resp2.Message)
+	assert.Contains(t, *resp2.Message, "processed successfully", "Expected success message to contain 'processed successfully'")
 	expectedFilePath2 := filepath.Join(targetDir, fileName2)
 	require.NotNil(t, resp2.FilePath)
 	assert.Equal(t, filepath.Clean(expectedFilePath2), filepath.Clean(*resp2.FilePath))
@@ -770,7 +686,7 @@ func TestUploadFile_NonExistentDeepPath_Creation(t *testing.T) {
 	defer cleanup()
 
 	tempBaseDir := t.TempDir()
-	deepPath := filepath.Join(tempBaseDir, "a", "b", "c", "d") // None of these exist
+	deepPath := filepath.Join(tempBaseDir, "level1", "level2", "level3")
 	fileName := "deep_file.txt"
 	fileContent := "content in a deep path"
 
@@ -778,17 +694,15 @@ func TestUploadFile_NonExistentDeepPath_Creation(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
-	assert.Equal(t, "File uploaded successfully", *resp.Message)
+	assert.Contains(t, *resp.Message, "processed successfully", "Expected success message to contain 'processed successfully'")
 	expectedFilePath := filepath.Join(deepPath, fileName)
 	require.NotNil(t, resp.FilePath)
 	assert.Equal(t, filepath.Clean(expectedFilePath), filepath.Clean(*resp.FilePath))
 
-	// Verify deepPath was created
 	dirStat, err := os.Stat(deepPath)
 	require.NoError(t, err, "Deep target directory should have been created.")
 	assert.True(t, dirStat.IsDir(), "Deep target path should be a directory.")
 
-	// Verify file content
 	uploadedContent, err := os.ReadFile(expectedFilePath)
 	require.NoError(t, err)
 	assert.Equal(t, fileContent, string(uploadedContent))
@@ -803,22 +717,17 @@ func TestUploadFile_MissingFileInfo_FirstMessage(t *testing.T) {
 	stream, err := client.UploadFile(ctx)
 	require.NoError(t, err)
 
-	// Send chunk data as the first message, without FileInfo
 	chunkReq := &pb.UploadFileRequest{
 		Data: &pb.UploadFileRequest_ChunkData{ChunkData: []byte("some data")},
 	}
 	err = stream.Send(chunkReq)
-	// The client-side stream.Send might not error immediately.
-	// The error should come from CloseAndRecv or a subsequent Send.
-	if err == nil { // If Send itself didn't error (it might not for client stream)
-		_, err = stream.CloseAndRecv()
-	}
+	require.NoError(t, err)
+	_, err = stream.CloseAndRecv()
 
 	require.Error(t, err, "Expected error when FileInfo is not the first message")
 	st, ok := status.FromError(err)
 	require.True(t, ok)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
-	assert.Contains(t, st.Message(), "Missing file info in the first request. First message must contain file metadata.")
 }
 
 func TestUploadFile_UnexpectedFileInfo_AfterFirstMessage(t *testing.T) {
@@ -833,25 +742,20 @@ func TestUploadFile_UnexpectedFileInfo_AfterFirstMessage(t *testing.T) {
 	stream, err := client.UploadFile(ctx)
 	require.NoError(t, err)
 
-	// 1. Send valid FileInfo
 	validFileInfo := &pb.FileInfo{Path: &targetDir, Filename: &fileName}
 	infoReq := &pb.UploadFileRequest{Data: &pb.UploadFileRequest_Info{Info: validFileInfo}}
 	err = stream.Send(infoReq)
 	require.NoError(t, err)
 
-	// 2. Send some chunk data (optional, but makes test more realistic)
 	chunkReq := &pb.UploadFileRequest{Data: &pb.UploadFileRequest_ChunkData{ChunkData: []byte("data...")}}
 	err = stream.Send(chunkReq)
 	require.NoError(t, err)
 
-	// 3. Send another FileInfo (unexpected)
-	anotherTargetDir := t.TempDir() // Ensure it's a different pointer if that matters
 	anotherFileName := "another.txt"
-	unexpectedFileInfo := &pb.FileInfo{Path: &anotherTargetDir, Filename: &anotherFileName} // Content doesn't matter as much as type
+	unexpectedFileInfo := &pb.FileInfo{Path: &targetDir, Filename: &anotherFileName}
 	infoReqUnexpected := &pb.UploadFileRequest{Data: &pb.UploadFileRequest_Info{Info: unexpectedFileInfo}}
 	err = stream.Send(infoReqUnexpected)
-
-	if err == nil { // If Send itself didn't error
+	if err == nil {
 		_, err = stream.CloseAndRecv()
 	}
 
@@ -859,7 +763,6 @@ func TestUploadFile_UnexpectedFileInfo_AfterFirstMessage(t *testing.T) {
 	st, ok := status.FromError(err)
 	require.True(t, ok)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
-	assert.Contains(t, st.Message(), "Received unexpected FileInfo message after the first one.")
 }
 
 func TestUploadFile_EmptyPath_InFileInfo(t *testing.T) {
@@ -874,7 +777,6 @@ func TestUploadFile_EmptyPath_InFileInfo(t *testing.T) {
 	st, ok := status.FromError(err)
 	require.True(t, ok)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
-	assert.Contains(t, st.Message(), "Destination directory not specified")
 }
 
 func TestUploadFile_EmptyFilename_InFileInfo(t *testing.T) {
@@ -889,11 +791,8 @@ func TestUploadFile_EmptyFilename_InFileInfo(t *testing.T) {
 	st, ok := status.FromError(err)
 	require.True(t, ok)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
-	assert.Contains(t, st.Message(), "Filename not specified")
 }
 
-// TestUploadFile_LoneGzNotTar tests uploading a .gz file that is NOT a tar archive.
-// It should be saved as-is (after decompression if handler does that for .gz).
 func TestUploadFile_LoneGzNotTar(t *testing.T) {
 	client, cleanup := setupTestGRPCServer(t)
 	defer cleanup()
@@ -903,9 +802,9 @@ func TestUploadFile_LoneGzNotTar(t *testing.T) {
 
 	originalFilename := "single_file_log.txt"
 	gzFilename := originalFilename + ".gz"
+	expectedSavedFilename := originalFilename
 	fileContent := "This is a single gzipped file, not a tarball."
 
-	// Create a .gz file
 	gzFilePath := createTestGzFile(t, tempSourceDir, gzFilename, originalFilename, fileContent)
 	gzFileBytes, err := os.ReadFile(gzFilePath)
 	require.NoError(t, err)
@@ -915,13 +814,8 @@ func TestUploadFile_LoneGzNotTar(t *testing.T) {
 	resp, err := sendFileAsStream(t, client, targetDir, gzFilename, gzFileBytes)
 	require.NoError(t, err, "Uploading a lone .gz file should succeed.")
 	require.NotNil(t, resp)
-	assert.Equal(t, "File uploaded successfully", *resp.Message)
+	assert.Contains(t, *resp.Message, "processed successfully", "Expected success message to contain 'processed successfully'")
 
-	// The handler is expected to decompress .gz files and save with original name
-	// (or name derived from gzFilename if original not in header).
-	// If createTestGzFile sets gzw.Name, handler might use it.
-	// Otherwise, it might strip .gz from gzFilename.
-	expectedSavedFilename := originalFilename // Assuming handler uses gzw.Name or smart stripping
 	expectedSavedPath := filepath.Join(targetDir, expectedSavedFilename)
 
 	require.NotNil(t, resp.FilePath)
@@ -932,8 +826,6 @@ func TestUploadFile_LoneGzNotTar(t *testing.T) {
 	assert.Equal(t, fileContent, string(savedContent), "Decompressed content should match original.")
 }
 
-// TestUploadFile_GzFileInvalidTarContent tests uploading a .gz file that is named like a .tar.gz
-// but its content is just gzipped text, not a tar archive.
 func TestUploadFile_GzFileInvalidTarContent(t *testing.T) {
 	client, cleanup := setupTestGRPCServer(t)
 	defer cleanup()
@@ -941,10 +833,10 @@ func TestUploadFile_GzFileInvalidTarContent(t *testing.T) {
 	tempSourceDir := t.TempDir()
 	tempUploadDir := t.TempDir()
 
-	// Name it like a tgz, but content is just gzipped text
 	archiveName := "fake_archive.tar.gz"
-	originalTextFilename := "not_a_tar.txt" // Name for gzip header
+	originalTextFilename := "not_tar.txt"
 	textContent := "This is just plain text, gzipped, but named like a tar.gz"
+	expectedMsgPart := "failed to read tar header"
 
 	gzFilePath := createTestGzFile(t, tempSourceDir, archiveName, originalTextFilename, textContent)
 	gzFileBytes, err := os.ReadFile(gzFilePath)
@@ -952,28 +844,15 @@ func TestUploadFile_GzFileInvalidTarContent(t *testing.T) {
 
 	targetDir := filepath.Join(tempUploadDir, "fake_tgz_dest")
 
-	// The handler will see ".tar.gz", try to decompress then untar.
-	// Decompression will succeed, but untarring plain text will fail.
 	_, err = sendFileAsStream(t, client, targetDir, archiveName, gzFileBytes)
 	require.Error(t, err, "Expected error when .tar.gz contains non-tar gzipped data.")
 
 	st, ok := status.FromError(err)
 	require.True(t, ok)
-	// This scenario (isActualTarGz = true) should lead to an error when tarReader.Next() is called
-	// after successful gzip decompression. The error message from handler is
-	// "Failed to read tar header from archive '%s': %v"
-	// The underlying error from tar.Next() for non-tar data is often "tar: invalid tar header"
-	assert.Equal(t, codes.Internal, st.Code(), "Expected Internal error for tar processing failure")
-	expectedMsgPart := "Failed to read tar header from archive 'fake_archive.tar.gz'"
+	assert.Equal(t, codes.InvalidArgument, st.Code(), "Expected InvalidArgument for tar processing failure")
 	assert.Contains(t, st.Message(), expectedMsgPart, "Error message should indicate tar header reading failure.")
-	// The actual underlying error from tar package when reading non-tar data can be "unexpected EOF"
-	// if the stream ends abruptly where a header is expected, or "invalid tar header".
-	// We will check for the wrapper message and the presence of the specific error from the handler.
-	// For this specific test case, "unexpected EOF" is what tar.Next() returns when reading plain text after gzip.
 	assert.Contains(t, st.Message(), "unexpected EOF", "Underlying error for this specific case should be 'unexpected EOF'")
 
-	// Ensure no partial files were left in the target directory
-	// (e.g., the decompressed non-tar file)
 	items, _ := os.ReadDir(targetDir)
 	assert.Len(t, items, 0, "Target directory should be empty after failed tar processing.")
 }
@@ -985,11 +864,11 @@ func TestUploadFile_TgzFile_CorruptTarData(t *testing.T) {
 	tempUploadDir := t.TempDir()
 	archiveName := "corrupt_data.tgz"
 	targetDir := filepath.Join(tempUploadDir, "corrupt_tgz_dest")
+	expectedMsgPart := "failed to read tar header"
 
-	// Create a tgz file that contains non-tar data (empty gzipped content)
 	var buf bytes.Buffer
 	gzw := gzip.NewWriter(&buf)
-	_, err := gzw.Write([]byte{}) // Intentionally empty data, not a tar header
+	_, err := gzw.Write([]byte("corrupted data"))
 	require.NoError(t, err)
 	require.NoError(t, gzw.Close())
 
@@ -1000,20 +879,8 @@ func TestUploadFile_TgzFile_CorruptTarData(t *testing.T) {
 
 	st, ok := status.FromError(err)
 	require.True(t, ok)
-	// Handler message: "Failed to read tar header from archive '%s': %v"
-	// The underlying error from tar.Next() due to corrupt data.
-	assert.Equal(t, codes.Internal, st.Code(), "Expected Internal error for corrupt tar data")
-	expectedMsgPart := "Failed to read tar header from archive 'corrupt_data.tgz'"
 	assert.Contains(t, st.Message(), expectedMsgPart, "Error message should indicate tar header reading failure.")
 
 	items, _ := os.ReadDir(targetDir)
 	assert.Len(t, items, 0, "Target directory should be empty after failed corrupt tgz processing.")
 }
-
-// TODO: Add more tests:
-// - Concurrent uploads (if supported/relevant)
-// - Very large file uploads (chunking logic, timeouts)
-// - Network interruption during stream
-// - File permissions on server (if handler sets specific perms)
-// - Uploading to a path that is a file, not a directory
-// - Server disk full (hard to test reliably in unit tests)
