@@ -20,6 +20,9 @@ jobs:
         with:
           go-version: '1.24.2'
 
+      - name: Install runn
+        run: go install github.com/k1LoW/runn/cmd/runn@latest
+
       - name: Format
         run: |
           files=$(gofmt -l ./)
@@ -32,6 +35,15 @@ jobs:
         uses: golangci/golangci-lint-action@v8
         with:
           version: v2.1
+
+      - name: Build application
+        run: go build -o app .
+
+      - name: Start application
+        run: nohup ./app &
+
+      - name: Run runn tests
+        run: $(go env GOPATH)/bin/runn run runn/**/*.yml
 
       - name: Test
         run: go test -v ./...
