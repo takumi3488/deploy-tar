@@ -1,0 +1,15 @@
+version: "0"
+desc: Test Healthz endpoint
+runners:
+  req:
+    endpoint: http://localhost:8080
+steps:
+  healthz:
+    desc: Check /healthz endpoint
+    req:
+      /healthz:
+        get:
+          body: null
+    test: |
+      current.res.status == 200
+// vim: filetype=yaml

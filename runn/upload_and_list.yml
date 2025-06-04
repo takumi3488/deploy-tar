@@ -1,0 +1,29 @@
+version: "0"
+desc: Test Upload and List endpoints
+runners:
+  req:
+    endpoint: http://localhost:8080
+vars:
+  testFile: /app/runn/test.txt # Relative path for runn
+  uploadDir: "test_uploads" # Define an upload directory
+  fileNameInArchive: "test.txt" # Name of the file as it will appear after upload
+steps:
+  upload:
+    desc: Upload a file
+    req:
+      /:
+        post:
+          body:
+            multipart/form-data:
+              path: "{{ vars.uploadDir }}" # Specify the destination path
+              tarfile: "{{ vars.testFile }}"
+    test: |
+      current.res.status == 200
+  list:
+    desc: List files and verify upload
+    req:
+      /list?d={{ vars.uploadDir }}: # Use query parameter 'd'
+        get:
+          body: null
+    test: |
+      current.res.status == 200 && len(filter(current.res.body.Entries, {.Name == vars.fileNameInArchive})) > 0 # Corrected assertion

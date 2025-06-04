@@ -1,0 +1,25 @@
+version: "0"
+desc: Test gRPC List endpoint
+runners:
+  greq:
+    addr: localhost:9090
+    tls: false
+    protos:
+      - ../proto/fileservice/v1/file_service.proto # Corrected protos path
+    importPaths:
+      - "." # This will be relative to the runbook's directory if --cwd is not used, or CWD if it is.
+            # For protos, it's often simpler to make proto paths relative to an importPath.
+            # Let's adjust importPaths to be the repo root for clarity with protos.
+      - ../ # Adding repo root as an import path
+vars:
+  uploadDir: "test_uploads" # Must match the upload_and_list.yml
+  fileNameInArchive: "test.txt" # Must match the upload_and_list.yml
+steps:
+  list_grpc:
+    desc: List files via gRPC
+    greq:
+      fileservice.v1.FileService/ListDirectory:
+        message:
+          directory: "{{ vars.uploadDir }}"
+    test: |
+      len(filter(current.res.message.entries, {.name == vars.fileNameInArchive})) > 0
