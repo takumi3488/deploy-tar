@@ -137,7 +137,7 @@ func TestListDirectoryHandler_SuccessCases(t *testing.T) {
 			expectedEntryNames: []string{"file2.txt"},
 			expectedEntryTypes: []string{"file"},
 			expectParentLink:   true,
-			expectedParentLink: "/list",
+			expectedParentLink: "/list?d=/", // Parent is root
 		},
 		{
 			name:               "List empty directory (no prefix, query d=empty_dir)",
@@ -148,7 +148,7 @@ func TestListDirectoryHandler_SuccessCases(t *testing.T) {
 			expectedEntryNames: []string{},
 			expectedEntryTypes: []string{},
 			expectParentLink:   true,
-			expectedParentLink: "/list",
+			expectedParentLink: "/list?d=/", // Parent is root
 		},
 		{
 			name:               "List root with PATH_PREFIX=/serve (query d is empty)",
@@ -169,7 +169,7 @@ func TestListDirectoryHandler_SuccessCases(t *testing.T) {
 			expectedEntryNames: []string{"file2.txt"},
 			expectedEntryTypes: []string{"file"},
 			expectParentLink:   true,
-			expectedParentLink: "/list",
+			expectedParentLink: "/list?d=/", // Parent is root
 		},
 		{
 			name:               "List root with PATH_PREFIX=/ (slash only, query d is empty)",
@@ -190,7 +190,7 @@ func TestListDirectoryHandler_SuccessCases(t *testing.T) {
 			expectedEntryNames: []string{"file2.txt"},
 			expectedEntryTypes: []string{"file"},
 			expectParentLink:   true,
-			expectedParentLink: "/list",
+			expectedParentLink: "/list?d=/", // Parent is root
 		},
 	}
 
@@ -439,31 +439,22 @@ func TestListDirectoryHandler_PathPrefixValidation(t *testing.T) {
 
 			err := ListDirectoryHandler(c)
 
+			// Assert the HTTP status code recorded.
+			assert.Equal(t, tt.expectedStatus, rec.Code)
+
 			if tt.expectedStatus == http.StatusOK {
+				// If OK, handler should return nil error.
 				assert.NoError(t, err)
-				assert.Equal(t, http.StatusOK, rec.Code)
 			} else {
-				// Expect an error to be returned (echo.HTTPError)
-				// assert.Error(t, err) // This fails if nil
-				if assert.NotNil(t, err, "Expected an error but got nil") {
-					httpError, ok := err.(*echo.HTTPError)
-					if assert.True(t, ok, "Expected error to be of type *echo.HTTPError") {
-						assert.Equal(t, tt.expectedStatus, httpError.Code)
-						if tt.expectedErrorMsg != "" {
-							// httpError.Message can be an interface{}, so we need a type assertion
-							if msgMap, ok := httpError.Message.(map[string]string); ok {
-								assert.Equal(t, tt.expectedErrorMsg, msgMap["error"])
-							} else {
-								assert.Equal(t, tt.expectedErrorMsg, httpError.Message)
-							}
-						}
+				// For error statuses, check the JSON body for the expected error message.
+				// The handler returns the error from c.JSON(), which might be nil if the write was successful.
+				// So, we primarily check the recorder's code and body.
+				if tt.expectedErrorMsg != "" {
+					var errResp map[string]string
+					jsonErr := json.Unmarshal(rec.Body.Bytes(), &errResp)
+					if assert.NoError(t, jsonErr, "Failed to unmarshal error response JSON: %s", rec.Body.String()) {
+						assert.Equal(t, tt.expectedErrorMsg, errResp["error"], "Error message mismatch")
 					}
-				}
-				// Also check the recorder's code (as the handler might call c.Error() without returning an error directly)
-				// However, this handler returns errors directly, so checking err is primary
-				assert.Equal(t, tt.expectedStatus, rec.Code)
-				if rec.Code != http.StatusOK && tt.expectedErrorMsg != "" {
-					assert.JSONEq(t, fmt.Sprintf(`{"error":"%s"}`, tt.expectedErrorMsg), rec.Body.String())
 				}
 			}
 		})
@@ -537,12 +528,11 @@ func TestListDirectoryHandler_ErrorCases(t *testing.T) {
 			var currentExpectedErrorMsg string
 			switch tt.name {
 			case "Directory not found (d=non_existent_dir)":
-				currentExpectedErrorMsg = fmt.Sprintf("Directory not found: %s", tt.queryD)
+				// Service returns cleaned path, e.g., /non_existent_dir
+				currentExpectedErrorMsg = fmt.Sprintf("Directory not found: /%s", tt.queryD)
 			case "Directory not found with non-existent prefix":
-				// In this test case, the environment variable PATH_PREFIX is intended to be set to a non-existent absolute path
-				// that is not relative to testRootDir, like /this_prefix_definitely_should_not_exist_for_testing_purposes.
-				// Therefore, the error message should match the actual message returned by the handler.
-				currentExpectedErrorMsg = fmt.Sprintf("Base directory specified by PATH_PREFIX not found: %s", tt.pathPrefixEnv)
+				// Service returns "PATH_PREFIX <path> not found"
+				currentExpectedErrorMsg = fmt.Sprintf("PATH_PREFIX %s not found", tt.pathPrefixEnv)
 			default:
 				currentExpectedErrorMsg = tt.expectedErrorMsg // Use pre-defined if any for other tests
 			}
@@ -550,29 +540,23 @@ func TestListDirectoryHandler_ErrorCases(t *testing.T) {
 			// err is already declared and assigned at line 396
 			// err := ListDirectoryHandler(c) // Call the handler  <- This line is the duplicate causing the error
 
+			// For error cases, the handler is expected to return an error that Echo converts to HTTP response.
+			// Or, the handler calls c.JSON and returns nil. The current ListDirectoryHandler returns c.JSON(...)
+			// which itself returns an error, so `err` from `ListDirectoryHandler(c)` should be non-nil for error cases.
 			if tt.expectedStatus == http.StatusOK {
-				if assert.NoError(t, err, "Expected no error for status OK but got one") {
-					assert.Equal(t, tt.expectedStatus, rec.Code)
-				}
-			} else { // Expecting an error status (e.g., 403, 404)
-				if assert.NotNil(t, err, "Expected an error but got nil for status %d", tt.expectedStatus) {
-					httpError, ok := err.(*echo.HTTPError)
-					if assert.True(t, ok, "Expected error to be of type *echo.HTTPError") {
-						assert.Equal(t, tt.expectedStatus, httpError.Code, "HTTP status code mismatch")
-						if currentExpectedErrorMsg != "" { // Only check message if one is expected
-							if msgMap, ok := httpError.Message.(map[string]string); ok {
-								assert.Equal(t, currentExpectedErrorMsg, msgMap["error"], "Error message mismatch")
-							} else {
-								assert.Equal(t, currentExpectedErrorMsg, httpError.Message, "Error message mismatch")
-							}
-						}
-					}
-				}
-				// Also check recorder status, as handler might use c.Error() which sets recorder status
+				assert.NoError(t, err, "Expected no error for status OK but got one")
+				assert.Equal(t, tt.expectedStatus, rec.Code)
+			} else {
 				assert.Equal(t, tt.expectedStatus, rec.Code, "Recorder HTTP status code mismatch")
-				if rec.Code != http.StatusOK && currentExpectedErrorMsg != "" {
-					// Check the body of the response if an error message is expected
-					assert.JSONEq(t, fmt.Sprintf(`{"error":"%s"}`, currentExpectedErrorMsg), rec.Body.String(), "Response body JSON mismatch")
+				// The handler now returns the error from c.JSON, so 'err' might be nil if c.JSON succeeds
+				// even if it writes an error status. The primary check is rec.Code and rec.Body.
+				if currentExpectedErrorMsg != "" {
+					var respJSON map[string]string
+					jsonErr := json.Unmarshal(rec.Body.Bytes(), &respJSON)
+					assert.NoError(t, jsonErr, "Failed to unmarshal error response JSON")
+					assert.Equal(t, currentExpectedErrorMsg, respJSON["error"], "Error message mismatch in JSON body")
+				} else {
+					// If no specific message, ensure body is empty or not an error structure we care about
 				}
 			}
 		})

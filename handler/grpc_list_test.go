@@ -89,7 +89,7 @@ func TestGRPCListDirectoryServer_ListDirectory(t *testing.T) {
 			},
 			checkResult: func(t *testing.T, resp *pb.ListDirectoryResponse) {
 				assert.NotNil(t, resp.Path)
-				assert.Equal(t, "subdir", *resp.Path)
+				assert.Equal(t, "/subdir", *resp.Path) // Service returns path with leading slash
 				assert.Len(t, resp.Entries, 1) // subfile.txt
 
 				entry := resp.Entries[0]

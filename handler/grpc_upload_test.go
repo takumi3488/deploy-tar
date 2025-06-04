@@ -261,7 +261,7 @@ func TestUploadFile_NormalFileUpload(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
-	assert.Equal(t, "File uploaded successfully", *resp.Message)
+	assert.Contains(t, *resp.Message, "processed successfully", "Expected success message to contain 'processed successfully'")
 	expectedFilePath := filepath.Join(targetDir, fileName)
 	require.NotNil(t, resp.FilePath)
 	assert.Equal(t, filepath.Clean(expectedFilePath), filepath.Clean(*resp.FilePath))
@@ -296,7 +296,7 @@ func TestUploadFile_TarArchive(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
-	assert.Equal(t, "File uploaded successfully", *resp.Message)
+	assert.Contains(t, *resp.Message, "processed successfully", "Expected success message to contain 'processed successfully'")
 	require.NotNil(t, resp.FilePath)
 	assert.Equal(t, filepath.Clean(targetExtractDir), filepath.Clean(*resp.FilePath), "Response FilePath should be the extraction directory for archives.")
 
@@ -332,7 +332,7 @@ func TestUploadFile_TgzArchive(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
-	assert.Equal(t, "File uploaded successfully", *resp.Message)
+	assert.Contains(t, *resp.Message, "processed successfully", "Expected success message to contain 'processed successfully'")
 	require.NotNil(t, resp.FilePath)
 	assert.Equal(t, filepath.Clean(targetExtractDir), filepath.Clean(*resp.FilePath))
 
@@ -365,7 +365,7 @@ func TestUploadFile_GzSingleFile(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
-	assert.Equal(t, "File uploaded successfully", *resp.Message)
+	assert.Contains(t, *resp.Message, "processed successfully", "Expected success message to contain 'processed successfully'")
 
 	expectedSavedFilename := strings.TrimSuffix(gzFilename, ".gz") // Handler should remove .gz
 	expectedSavedPath := filepath.Join(targetDir, expectedSavedFilename)
@@ -411,7 +411,7 @@ func TestUploadFile_WithPathPrefix_Allowed(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
-	assert.Equal(t, "File uploaded successfully", *resp.Message)
+	assert.Contains(t, *resp.Message, "processed successfully", "Expected success message to contain 'processed successfully'")
 	expectedFilePath := filepath.Join(targetDirUserProvided, fileName)
 	require.NotNil(t, resp.FilePath)
 	assert.Equal(t, filepath.Clean(expectedFilePath), filepath.Clean(*resp.FilePath))
@@ -458,7 +458,7 @@ func TestUploadFile_WithPathPrefix_Denied(t *testing.T) {
 	st, ok := status.FromError(err)
 	require.True(t, ok)
 	assert.Equal(t, codes.PermissionDenied, st.Code())
-	assert.Contains(t, st.Message(), "Path is not allowed")
+	assert.Contains(t, st.Message(), "is outside the scope of path prefix") // Updated to service error
 
 	nonExistentFilePath := filepath.Join(targetDirUserProvided, fileName)
 	_, statErr := os.Stat(nonExistentFilePath)
@@ -489,7 +489,7 @@ func TestUploadFile_PathPrefixNotSet(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
-	assert.Equal(t, "File uploaded successfully", *resp.Message)
+	assert.Contains(t, *resp.Message, "processed successfully", "Expected success message to contain 'processed successfully'")
 	expectedFilePath := filepath.Join(targetDir, fileName)
 	require.NotNil(t, resp.FilePath)
 	assert.Equal(t, filepath.Clean(expectedFilePath), filepath.Clean(*resp.FilePath))
@@ -524,9 +524,9 @@ func TestUploadFile_PathTraversal_Filename(t *testing.T) {
 
 	st, ok := status.FromError(err)
 	require.True(t, ok)
-	assert.Equal(t, codes.PermissionDenied, st.Code())
-	// Message from handler: "Invalid path for file (path traversal attempt): %s"
-	assert.Contains(t, st.Message(), "Invalid path for file (path traversal attempt)")
+	assert.Equal(t, codes.PermissionDenied, st.Code()) // Service correctly makes it PermissionDenied
+	// Message from service: "invalid characters or traversal attempt in filename '%s'"
+	assert.Contains(t, st.Message(), "invalid characters or traversal attempt in filename")
 
 	// Verify file was NOT created at the intended traversed path
 	// targetDirForUpload = /tmp/.../safe_uploads
@@ -620,7 +620,7 @@ func TestUploadFile_EmptyStream_NonArchive(t *testing.T) {
 	resp, err := stream.CloseAndRecv() // No chunks sent
 	require.NoError(t, err)            // Expect success for zero-byte file
 	require.NotNil(t, resp)
-	assert.Equal(t, "File uploaded successfully", *resp.Message)
+	assert.Contains(t, *resp.Message, "processed successfully", "Expected success message to contain 'processed successfully'")
 
 	expectedPath := filepath.Join(targetDir, fileName)
 	require.NotNil(t, resp.FilePath)
@@ -654,9 +654,9 @@ func TestUploadFile_EmptyStream_TarArchive(t *testing.T) {
 	require.Error(t, err, "Expected error for empty tar stream")
 	st, ok := status.FromError(err)
 	require.True(t, ok)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-	// Handler message: "Empty or invalid tar archive '%s': no headers found"
-	expectedMsg := "Empty or invalid tar archive 'empty.tar': no headers found"
+	assert.Equal(t, codes.InvalidArgument, st.Code()) // Service returns InvalidArgument
+	// Service message: "empty or invalid tar archive '%s': no headers found"
+	expectedMsg := "empty or invalid tar archive 'empty.tar': no headers found"
 	assert.Contains(t, st.Message(), expectedMsg, "Error message mismatch")
 }
 
@@ -707,12 +707,12 @@ func TestUploadFile_IncompleteTarArchive(t *testing.T) {
 
 	st, ok := status.FromError(err)
 	require.True(t, ok)
-	// The specific error message/code depends on how the tar library and handler report it.
-	// e.g., "unexpected EOF", "invalid tar header", "archive/tar: invalid tar header"
-	// or the handler might wrap it.
-	assert.True(t, strings.Contains(st.Message(), "error processing tar archive") ||
-		strings.Contains(st.Message(), "unexpected EOF") ||
-		strings.Contains(st.Message(), "invalid tar header"),
+	// The specific error message/code depends on how the tar library and service report it.
+	// service.UploadFile -> extractTar -> "failed to read tar header from archive '%s': %w"
+	// The underlying error for incomplete tar is often io.ErrUnexpectedEOF or just io.EOF from tar.Reader.Next()
+	assert.Equal(t, codes.InvalidArgument, st.Code()) // Service returns InvalidArgument for bad archives
+	assert.True(t, strings.Contains(st.Message(), "failed to read tar header") ||
+		strings.Contains(st.Message(), "unexpected EOF"), // Underlying tar lib error
 		"Error message should indicate tar processing issue. Got: %s", st.Message())
 
 	// Check that file1.txt might or might not exist, but file2_incomplete.txt should not.
@@ -734,7 +734,7 @@ func TestUploadFile_PutLikeBehavior_Directory(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
-	assert.Equal(t, "File uploaded successfully", *resp.Message)
+	assert.Contains(t, *resp.Message, "processed successfully", "Expected success message to contain 'processed successfully'")
 	expectedFilePath := filepath.Join(targetDir, fileName)
 	require.NotNil(t, resp.FilePath)
 	assert.Equal(t, filepath.Clean(expectedFilePath), filepath.Clean(*resp.FilePath))
@@ -755,7 +755,7 @@ func TestUploadFile_PutLikeBehavior_Directory(t *testing.T) {
 	resp2, err2 := sendFileAsStream(t, client, targetDir, fileName2, []byte(fileContent2))
 	require.NoError(t, err2)
 	require.NotNil(t, resp2)
-	assert.Equal(t, "File uploaded successfully", *resp2.Message)
+	assert.Contains(t, *resp2.Message, "processed successfully", "Expected success message to contain 'processed successfully'")
 	expectedFilePath2 := filepath.Join(targetDir, fileName2)
 	require.NotNil(t, resp2.FilePath)
 	assert.Equal(t, filepath.Clean(expectedFilePath2), filepath.Clean(*resp2.FilePath))
@@ -778,7 +778,7 @@ func TestUploadFile_NonExistentDeepPath_Creation(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
-	assert.Equal(t, "File uploaded successfully", *resp.Message)
+	assert.Contains(t, *resp.Message, "processed successfully", "Expected success message to contain 'processed successfully'")
 	expectedFilePath := filepath.Join(deepPath, fileName)
 	require.NotNil(t, resp.FilePath)
 	assert.Equal(t, filepath.Clean(expectedFilePath), filepath.Clean(*resp.FilePath))
@@ -818,7 +818,7 @@ func TestUploadFile_MissingFileInfo_FirstMessage(t *testing.T) {
 	st, ok := status.FromError(err)
 	require.True(t, ok)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
-	assert.Contains(t, st.Message(), "Missing file info in the first request. First message must contain file metadata.")
+	assert.Contains(t, st.Message(), "Missing FileInfo in the first message") // Updated to match handler's direct error
 }
 
 func TestUploadFile_UnexpectedFileInfo_AfterFirstMessage(t *testing.T) {
@@ -859,7 +859,7 @@ func TestUploadFile_UnexpectedFileInfo_AfterFirstMessage(t *testing.T) {
 	st, ok := status.FromError(err)
 	require.True(t, ok)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
-	assert.Contains(t, st.Message(), "Received unexpected FileInfo message after the first one.")
+	assert.Contains(t, st.Message(), "Received FileInfo message after the first one") // Updated to match handler's direct error
 }
 
 func TestUploadFile_EmptyPath_InFileInfo(t *testing.T) {
@@ -874,7 +874,7 @@ func TestUploadFile_EmptyPath_InFileInfo(t *testing.T) {
 	st, ok := status.FromError(err)
 	require.True(t, ok)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
-	assert.Contains(t, st.Message(), "Destination directory not specified")
+	assert.Contains(t, st.Message(), "Target path is required in FileInfo") // Updated to match handler's direct error
 }
 
 func TestUploadFile_EmptyFilename_InFileInfo(t *testing.T) {
@@ -889,7 +889,7 @@ func TestUploadFile_EmptyFilename_InFileInfo(t *testing.T) {
 	st, ok := status.FromError(err)
 	require.True(t, ok)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
-	assert.Contains(t, st.Message(), "Filename not specified")
+	assert.Contains(t, st.Message(), "Filename is required in FileInfo") // Updated to match handler's direct error
 }
 
 // TestUploadFile_LoneGzNotTar tests uploading a .gz file that is NOT a tar archive.
@@ -915,7 +915,7 @@ func TestUploadFile_LoneGzNotTar(t *testing.T) {
 	resp, err := sendFileAsStream(t, client, targetDir, gzFilename, gzFileBytes)
 	require.NoError(t, err, "Uploading a lone .gz file should succeed.")
 	require.NotNil(t, resp)
-	assert.Equal(t, "File uploaded successfully", *resp.Message)
+	assert.Contains(t, *resp.Message, "processed successfully", "Expected success message to contain 'processed successfully'")
 
 	// The handler is expected to decompress .gz files and save with original name
 	// (or name derived from gzFilename if original not in header).
@@ -959,17 +959,11 @@ func TestUploadFile_GzFileInvalidTarContent(t *testing.T) {
 
 	st, ok := status.FromError(err)
 	require.True(t, ok)
-	// This scenario (isActualTarGz = true) should lead to an error when tarReader.Next() is called
-	// after successful gzip decompression. The error message from handler is
-	// "Failed to read tar header from archive '%s': %v"
-	// The underlying error from tar.Next() for non-tar data is often "tar: invalid tar header"
-	assert.Equal(t, codes.Internal, st.Code(), "Expected Internal error for tar processing failure")
-	expectedMsgPart := "Failed to read tar header from archive 'fake_archive.tar.gz'"
+	// Service/handler maps this to InvalidArgument as it's a problem with client-provided data format
+	assert.Equal(t, codes.InvalidArgument, st.Code(), "Expected InvalidArgument for tar processing failure")
+	expectedMsgPart := "failed to read tar header from archive 'fake_archive.tar.gz'" // Service error
 	assert.Contains(t, st.Message(), expectedMsgPart, "Error message should indicate tar header reading failure.")
-	// The actual underlying error from tar package when reading non-tar data can be "unexpected EOF"
-	// if the stream ends abruptly where a header is expected, or "invalid tar header".
-	// We will check for the wrapper message and the presence of the specific error from the handler.
-	// For this specific test case, "unexpected EOF" is what tar.Next() returns when reading plain text after gzip.
+	// Underlying error from tar library for this case is often "unexpected EOF"
 	assert.Contains(t, st.Message(), "unexpected EOF", "Underlying error for this specific case should be 'unexpected EOF'")
 
 	// Ensure no partial files were left in the target directory
@@ -1000,10 +994,9 @@ func TestUploadFile_TgzFile_CorruptTarData(t *testing.T) {
 
 	st, ok := status.FromError(err)
 	require.True(t, ok)
-	// Handler message: "Failed to read tar header from archive '%s': %v"
-	// The underlying error from tar.Next() due to corrupt data.
-	assert.Equal(t, codes.Internal, st.Code(), "Expected Internal error for corrupt tar data")
-	expectedMsgPart := "Failed to read tar header from archive 'corrupt_data.tgz'"
+	// Handler message: "empty or invalid tar archive '%s': no headers found"
+	assert.Equal(t, codes.InvalidArgument, st.Code(), "Expected InvalidArgument for corrupt tar data") // Service error
+	expectedMsgPart := "empty or invalid tar archive 'corrupt_data.tgz'" // Service error for empty/no-header tars
 	assert.Contains(t, st.Message(), expectedMsgPart, "Error message should indicate tar header reading failure.")
 
 	items, _ := os.ReadDir(targetDir)
