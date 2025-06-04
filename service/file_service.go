@@ -3,7 +3,7 @@ package service
 import (
 	"archive/tar"
 	"compress/gzip"
-	"errors" // For errors.Is
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -14,9 +14,9 @@ import (
 
 type DirectoryEntryService struct {
 	Name string
-	Type string // "file" or "directory"
-	Size string // Formatted string, empty for directories
-	Link string // Path for the next request/link
+	Type string
+	Size string
+	Link string
 }
 
 func formatFileSizeService(size int64) string {
@@ -113,11 +113,9 @@ func ListDirectory(validatedAbsPath string, originalRequestPath string) ([]Direc
 	return entries, parentLink, nil
 }
 
-// UploadFile handles saving an uploaded file.
 func UploadFile(inputStream io.Reader, targetDirUserPath, fileName, pathPrefixEnv string, isPutRequest bool) (finalPath string, err error) {
 	cleanedTargetUserPath := filepath.Clean(targetDirUserPath)
 
-	// Determine cleanedPathPrefix early for the validation check
 	var absValidatedTargetDir string
 	cleanedPathPrefix := ""
 	if pathPrefixEnv != "" {
@@ -127,34 +125,18 @@ func UploadFile(inputStream io.Reader, targetDirUserPath, fileName, pathPrefixEn
 		}
 	}
 
-	if cleanedTargetUserPath == "" { // Empty is never allowed
+	if cleanedTargetUserPath == "" && cleanedPathPrefix == "" {
 		return "", fmt.Errorf("target directory cannot be empty")
 	}
-	// "." is disallowed only if there's NO prefix (meaning CWD, which is too broad for a generic ".")
-	// If a prefix is active, "." refers to the prefix root itself, which is allowed.
 	if cleanedTargetUserPath == "." && cleanedPathPrefix == "" {
 		return "", fmt.Errorf("target directory cannot be current directory shorthand without a prefix")
 	}
 
-	// Basic preliminary traversal check for user path input
 	if strings.HasPrefix(cleanedTargetUserPath, string(os.PathSeparator)+"..") || strings.HasPrefix(cleanedTargetUserPath, ".."+string(os.PathSeparator)) || cleanedTargetUserPath == ".." {
 		return "", fmt.Errorf("target directory cannot be a path traversal attempt: %s", targetDirUserPath)
 	}
 
-	// absValidatedTargetDir and cleanedPathPrefix are already declared and initialized above.
-	// Now, construct absValidatedTargetDir based on them.
-
 	if cleanedPathPrefix != "" {
-		// This block assumes cleanedPathPrefix itself has been validated (exists, is a dir)
-		// This validation is done by the new code block at the top if pathPrefixEnv is not empty.
-		// We need to ensure prefixInfo is available if we re-introduce os.Stat here,
-		// or rely on the initial validation of cleanedPathPrefix.
-		// For now, let's assume cleanedPathPrefix is valid if non-empty.
-		// The os.Stat for cleanedPathPrefix should have been done when it was determined.
-		// Re-checking os.Stat here is redundant if the top block did it.
-		// Let's ensure the top block correctly populates prefixInfo or handles errors.
-
-		// The following logic correctly determines absValidatedTargetDir based on prefix
 		absCleanedPathPrefix, pathErr := filepath.Abs(cleanedPathPrefix)
 		if pathErr != nil {
 			return "", fmt.Errorf("failed to get absolute path for prefix '%s': %w", cleanedPathPrefix, pathErr)
@@ -168,22 +150,24 @@ func UploadFile(inputStream io.Reader, targetDirUserPath, fileName, pathPrefixEn
 			if !strings.HasPrefix(absCleanedTargetUserPath, absCleanedPathPrefix) {
 				return "", fmt.Errorf("absolute target directory '%s' is outside the scope of path prefix '%s'", targetDirUserPath, cleanedPathPrefix)
 			}
-			absValidatedTargetDir = absCleanedTargetUserPath // Assign to the outer declared variable
+			absValidatedTargetDir = absCleanedTargetUserPath
 		} else {
-			absValidatedTargetDir = filepath.Join(absCleanedPathPrefix, cleanedTargetUserPath) // Assign to the outer declared variable
+			// 空文字列や"."の場合はプレフィックス直下を指す
+			if cleanedTargetUserPath == "" || cleanedTargetUserPath == "." {
+				absValidatedTargetDir = absCleanedPathPrefix
+			} else {
+				absValidatedTargetDir = filepath.Join(absCleanedPathPrefix, cleanedTargetUserPath)
+			}
 		}
 	} else {
-		// No prefix, path is relative to CWD or absolute
-		var absErr error // Use a local error variable for this operation
-		absValidatedTargetDir, absErr = filepath.Abs(cleanedTargetUserPath) // Assign to the outer declared variable
+		var absErr error
+		absValidatedTargetDir, absErr = filepath.Abs(cleanedTargetUserPath)
 		if absErr != nil {
 			return "", fmt.Errorf("failed to get absolute path for target: %w", absErr)
 		}
 	}
-	absValidatedTargetDir = filepath.Clean(absValidatedTargetDir) // Clean the final result
+	absValidatedTargetDir = filepath.Clean(absValidatedTargetDir)
 
-	// The prefix validation (existence and type) should be done once when cleanedPathPrefix is established.
-	// Adding it here to ensure it's done if the top block somehow missed it for pathPrefixEnv cases.
 	if cleanedPathPrefix != "" {
 		prefixInfo, statErr := os.Stat(cleanedPathPrefix)
 		if statErr != nil {
@@ -201,14 +185,9 @@ func UploadFile(inputStream io.Reader, targetDirUserPath, fileName, pathPrefixEn
 	if cleanedPathPrefix != "" {
 		effectiveBaseDir, _ = filepath.Abs(cleanedPathPrefix)
 	} else {
-		// If no prefix, the base depends on whether the original targetDirUserPath was absolute.
-		if filepath.IsAbs(targetDirUserPath) { // Check original user input, not the cleaned one for this decision
-			// If user provided an absolute path, they define their own scope.
-			// The main validation is that absValidatedTargetDir must be this path or within it.
-			// For the Rel check, using itself as base means relPath will be "." if valid.
+		if filepath.IsAbs(targetDirUserPath) {
 			effectiveBaseDir = absValidatedTargetDir
 		} else {
-			// User provided a relative path, so CWD is the base.
 			effectiveBaseDir, _ = os.Getwd()
 		}
 	}
@@ -223,7 +202,6 @@ func UploadFile(inputStream io.Reader, targetDirUserPath, fileName, pathPrefixEn
 
 	if isPutRequest {
 		if err := os.RemoveAll(absValidatedTargetDir); err != nil {
-			// Check if it failed because it didn't exist - that's fine for PUT.
 			if !os.IsNotExist(err) {
 				return "", fmt.Errorf("failed to remove existing directory '%s' for PUT: %w", absValidatedTargetDir, err)
 			}
@@ -244,7 +222,11 @@ func UploadFile(inputStream io.Reader, targetDirUserPath, fileName, pathPrefixEn
 		if errGzip != nil {
 			return "", fmt.Errorf("failed to create gzip reader for archive '%s': %w", fileName, errGzip)
 		}
-		defer gzr.Close()
+		defer func() {
+			if err := gzr.Close(); err != nil {
+				_ = err
+			}
+		}()
 		if errExtract := extractTar(gzr, absValidatedTargetDir, fileName); errExtract != nil {
 			return "", errExtract
 		}
@@ -259,22 +241,23 @@ func UploadFile(inputStream io.Reader, targetDirUserPath, fileName, pathPrefixEn
 		if errGzip != nil {
 			return "", fmt.Errorf("failed to create gzip reader for '%s': %w", fileName, errGzip)
 		}
-		defer gzr.Close()
+		defer func() {
+			if err := gzr.Close(); err != nil {
+				_ = err
+			}
+		}()
 
 		targetFileName := strings.TrimSuffix(fileName, ".gz")
-		if targetFileName == "" { // Handle case like ".gz" or "file.gz.gz" trimmed to empty
+		if targetFileName == "" {
 			targetFileName = "gzipped_file"
 		}
-		absFinalFilePath := filepath.Join(absValidatedTargetDir, filepath.Clean(targetFileName)) // Clean targetFileName too
-
-		// Security check for the final path of the decompressed file
+		absFinalFilePath := filepath.Join(absValidatedTargetDir, filepath.Clean(targetFileName))
 		if !strings.HasPrefix(absFinalFilePath, absValidatedTargetDir+string(os.PathSeparator)) && absFinalFilePath != absValidatedTargetDir {
 			return "", fmt.Errorf("path traversal attempt for gzipped file target '%s'", targetFileName)
 		}
 		if errMkdir := os.MkdirAll(filepath.Dir(absFinalFilePath), 0755); errMkdir != nil {
 			return "", fmt.Errorf("failed to create parent directory for gzipped file '%s': %w", absFinalFilePath, errMkdir)
 		}
-
 
 		outFile, errOpen := os.OpenFile(absFinalFilePath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
 		if errOpen != nil {
@@ -285,18 +268,18 @@ func UploadFile(inputStream io.Reader, targetDirUserPath, fileName, pathPrefixEn
 			return "", fmt.Errorf("failed to close output file for gzipped content '%s': %w", absFinalFilePath, closeErr)
 		}
 		if copyErr != nil {
-			os.Remove(absFinalFilePath)
+			if err := os.Remove(absFinalFilePath); err != nil {
+				_ = err
+			}
 			return "", fmt.Errorf("failed to copy gzipped file content to '%s': %w", absFinalFilePath, copyErr)
 		}
 		finalPath = absFinalFilePath
 	} else {
-		// Clean the potentially malicious fileName before joining
 		cleanedFileName := filepath.Clean(fileName)
 		if strings.HasPrefix(cleanedFileName, string(os.PathSeparator)) || strings.HasPrefix(cleanedFileName, "..") {
-			 return "", fmt.Errorf("invalid characters or traversal attempt in filename '%s'", fileName)
+			return "", fmt.Errorf("invalid characters or traversal attempt in filename '%s'", fileName)
 		}
 		absFinalFilePath := filepath.Join(absValidatedTargetDir, cleanedFileName)
-
 
 		if !strings.HasPrefix(absFinalFilePath, absValidatedTargetDir+string(os.PathSeparator)) && absFinalFilePath != absValidatedTargetDir {
 			return "", fmt.Errorf("path traversal attempt for file target '%s'", fileName)
@@ -314,7 +297,9 @@ func UploadFile(inputStream io.Reader, targetDirUserPath, fileName, pathPrefixEn
 			return "", fmt.Errorf("failed to close output file '%s': %w", absFinalFilePath, closeErr)
 		}
 		if copyErr != nil {
-			os.Remove(absFinalFilePath)
+			if err := os.Remove(absFinalFilePath); err != nil {
+				_ = err
+			}
 			return "", fmt.Errorf("failed to copy file content to '%s': %w", absFinalFilePath, copyErr)
 		}
 		finalPath = absFinalFilePath
@@ -346,7 +331,6 @@ func extractTar(r io.Reader, baseExtractDir string, archiveName string) error {
 		}
 
 		targetItemPath := filepath.Join(baseExtractDir, cleanedHeaderName)
-		// Final security check: ensure the targetItemPath is truly within baseExtractDir
 		if !strings.HasPrefix(targetItemPath, baseExtractDir+string(os.PathSeparator)) && targetItemPath != baseExtractDir {
 			return fmt.Errorf("path traversal attempt in archive '%s': entry '%s' resolves to '%s' which is outside extraction directory '%s'", archiveName, header.Name, targetItemPath, baseExtractDir)
 		}
@@ -371,14 +355,15 @@ func extractTar(r io.Reader, baseExtractDir string, archiveName string) error {
 			closeErr := itemOutFile.Close()
 
 			if itemCopyErr != nil {
-				os.Remove(targetItemPath)
+				if err := os.Remove(targetItemPath); err != nil {
+					_ = err
+				}
 				return fmt.Errorf("failed to copy content to '%s' from archive '%s': %w", targetItemPath, archiveName, itemCopyErr)
 			}
 			if closeErr != nil {
 				return fmt.Errorf("failed to close file '%s' from archive '%s': %w", targetItemPath, archiveName, closeErr)
 			}
 		default:
-			// Log unsupported types if necessary
 		}
 	}
 	return nil

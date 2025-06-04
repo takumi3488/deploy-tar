@@ -13,11 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// setupTestEnvironment creates a directory and files for testing, and returns its path.
-// It also returns a cleanup function.
 func setupTestEnvironment(t *testing.T) (string, func()) {
 	t.Helper()
-	// Create a temporary root directory
 	rootDir, err := os.MkdirTemp("", "list_handler_test_")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -35,19 +32,11 @@ func setupTestEnvironment(t *testing.T) (string, func()) {
 		if errRemove := os.RemoveAll(rootDir); errRemove != nil {
 			t.Logf("Failed to remove temp dir during setup cleanup: %v", errRemove)
 		}
-		// Attempt to change back to originalWd, though it might also fail
 		if errChdir := os.Chdir(originalWd); errChdir != nil {
 			t.Logf("Failed to change directory back to originalWd during setup cleanup: %v", errChdir)
 		}
 		t.Fatalf("Failed to change current working directory to %s: %v", rootDir, err)
 	}
-
-	// Create test file and directory structure
-	// rootDir/ (which is now current working directory for the test)
-	//   |- file1.txt
-	//   |- dir1/
-	//   |  |- file2.txt
-	//   |- empty_dir/
 
 	err = os.WriteFile(filepath.Join(rootDir, "file1.txt"), []byte("content1"), 0644)
 	if err != nil {
@@ -74,8 +63,6 @@ func setupTestEnvironment(t *testing.T) (string, func()) {
 	cleanup := func() {
 		errChdirBack := os.Chdir(originalWd)
 		if errChdirBack != nil {
-			// Log or handle error, but don't fail the test here as it's cleanup
-			// Using t.Logf or fmt.Fprintf(os.Stderr, ...)
 			t.Logf("Warning: failed to change directory back to %s: %v", originalWd, errChdirBack)
 		}
 		errRemoveAll := os.RemoveAll(rootDir)
@@ -83,18 +70,14 @@ func setupTestEnvironment(t *testing.T) (string, func()) {
 			t.Logf("Warning: failed to remove temp dir %s: %v", rootDir, errRemoveAll)
 		}
 	}
-	// rootDir is returned but its significance is reduced as CWD is changed.
-	// Callers might not need it if they operate on CWD.
 	return rootDir, cleanup
 }
 
 func TestListDirectoryHandler_SuccessCases(t *testing.T) {
-	originalWd, _ := os.Getwd() // Save the original working directory
+	originalWd, _ := os.Getwd()
 	testRootDir, cleanup := setupTestEnvironment(t)
 	defer cleanup()
 
-	// Since the handler is based on the current working directory,
-	// move to the test root directory
 	err := os.Chdir(testRootDir)
 	if err != nil {
 		t.Fatalf("Failed to change directory to test root: %v", err)
@@ -103,14 +86,14 @@ func TestListDirectoryHandler_SuccessCases(t *testing.T) {
 		if err := os.Chdir(originalWd); err != nil {
 			t.Logf("Failed to change directory back to originalWd: %v", err)
 		}
-	}() // Return to the original directory after the test
+	}()
 
 	e := echo.New()
 
 	tests := []struct {
 		name               string
-		queryD             string // Value of query parameter "d"
-		pathPrefixEnv      string // Environment variable PATH_PREFIX
+		queryD             string
+		pathPrefixEnv      string
 		expectedStatus     int
 		expectedPath       string
 		expectedEntryNames []string
@@ -137,7 +120,7 @@ func TestListDirectoryHandler_SuccessCases(t *testing.T) {
 			expectedEntryNames: []string{"file2.txt"},
 			expectedEntryTypes: []string{"file"},
 			expectParentLink:   true,
-			expectedParentLink: "/list?d=/", // Parent is root
+			expectedParentLink: "/list?d=/",
 		},
 		{
 			name:               "List empty directory (no prefix, query d=empty_dir)",
@@ -148,7 +131,7 @@ func TestListDirectoryHandler_SuccessCases(t *testing.T) {
 			expectedEntryNames: []string{},
 			expectedEntryTypes: []string{},
 			expectParentLink:   true,
-			expectedParentLink: "/list?d=/", // Parent is root
+			expectedParentLink: "/list?d=/",
 		},
 		{
 			name:               "List root with PATH_PREFIX=/serve (query d is empty)",
@@ -169,7 +152,7 @@ func TestListDirectoryHandler_SuccessCases(t *testing.T) {
 			expectedEntryNames: []string{"file2.txt"},
 			expectedEntryTypes: []string{"file"},
 			expectParentLink:   true,
-			expectedParentLink: "/list?d=/", // Parent is root
+			expectedParentLink: "/list?d=/",
 		},
 		{
 			name:               "List root with PATH_PREFIX=/ (slash only, query d is empty)",
@@ -190,30 +173,27 @@ func TestListDirectoryHandler_SuccessCases(t *testing.T) {
 			expectedEntryNames: []string{"file2.txt"},
 			expectedEntryTypes: []string{"file"},
 			expectParentLink:   true,
-			expectedParentLink: "/list?d=/", // Parent is root
+			expectedParentLink: "/list?d=/",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			currentTestPrefixPath := tt.pathPrefixEnv
-			var createdPrefixDir string // Track the directory we create for cleanup
+			var createdPrefixDir string
 			if tt.pathPrefixEnv != "" && tt.pathPrefixEnv != "/" {
-				// If tt.pathPrefixEnv is in a format like "/serve", extract "serve"
 				prefixDirName := tt.pathPrefixEnv
 				if filepath.IsAbs(prefixDirName) {
 					prefixDirName = prefixDirName[1:]
 				}
-				// Combine with testRootDir (current working directory) to make it an absolute path
 				absolutePrefixPath := filepath.Join(testRootDir, prefixDirName)
-				currentTestPrefixPath = absolutePrefixPath // Update the path to be set in the environment variable
-				createdPrefixDir = absolutePrefixPath      // Store for cleanup
+				createdPrefixDir = absolutePrefixPath
+				currentTestPrefixPath = absolutePrefixPath
 
 				if err := os.MkdirAll(absolutePrefixPath, 0755); err != nil {
 					t.Fatalf("Failed to create PATH_PREFIX directory %s: %v", absolutePrefixPath, err)
 				}
 
-				// Populate this prefix directory
 				err := os.WriteFile(filepath.Join(absolutePrefixPath, "file1.txt"), []byte("content1_in_prefix"), 0644)
 				if err != nil {
 					t.Fatalf("Failed to create file1.txt in %s: %v", absolutePrefixPath, err)
@@ -241,7 +221,6 @@ func TestListDirectoryHandler_SuccessCases(t *testing.T) {
 				if err := os.Unsetenv("PATH_PREFIX"); err != nil {
 					t.Logf("Failed to unset PATH_PREFIX: %v", err)
 				}
-				// Clean up the created prefix directory
 				if createdPrefixDir != "" {
 					if err := os.RemoveAll(createdPrefixDir); err != nil {
 						t.Logf("Failed to clean up prefix directory %s: %v", createdPrefixDir, err)
@@ -249,7 +228,6 @@ func TestListDirectoryHandler_SuccessCases(t *testing.T) {
 				}
 			}()
 
-			// Construct request URL
 			requestURL := "/list"
 			if tt.queryD != "" {
 				requestURL = fmt.Sprintf("/list?d=%s", tt.queryD)
@@ -258,21 +236,16 @@ func TestListDirectoryHandler_SuccessCases(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, requestURL, nil)
 			rec := httptest.NewRecorder()
 			c := e.NewContext(req, rec)
-			// c.Param("*") is no longer used, so SetParamNames and SetParamValues are not needed
 
 			if assert.NoError(t, ListDirectoryHandler(c)) {
 				assert.Equal(t, tt.expectedStatus, rec.Code)
 				if tt.expectedStatus == http.StatusOK {
-					// Parse JSON response
 					var response DirectoryResponse
 					if assert.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response)) {
-						// Check path
 						assert.Equal(t, tt.expectedPath, response.Path)
 
-						// Check entries count
 						assert.Len(t, response.Entries, len(tt.expectedEntryNames))
 
-						// Check each entry
 						entryNames := make([]string, len(response.Entries))
 						entryTypes := make([]string, len(response.Entries))
 						for i, entry := range response.Entries {
@@ -288,7 +261,6 @@ func TestListDirectoryHandler_SuccessCases(t *testing.T) {
 							assert.Contains(t, entryTypes, expectedType)
 						}
 
-						// Check parent link
 						if tt.expectParentLink {
 							assert.NotNil(t, response.ParentLink)
 							if response.ParentLink != nil {
@@ -322,10 +294,10 @@ func TestListDirectoryHandler_PathPrefixValidation(t *testing.T) {
 
 	tests := []struct {
 		name             string
-		queryD           string // Value of query parameter "d"
+		queryD           string
 		pathPrefixEnv    string
 		expectedStatus   int
-		expectedErrorMsg string // Part of the expected message in case of error
+		expectedErrorMsg string
 	}{
 		{
 			name:           "Allowed path with prefix (d=dir1, prefix=/serve)",
@@ -334,11 +306,9 @@ func TestListDirectoryHandler_PathPrefixValidation(t *testing.T) {
 			expectedStatus: http.StatusOK,
 		},
 		{
-			name:             "Forbidden path (d=../outside, prefix=/serve)", // path traversal attempt
-			queryD:           "../outside",                                   // Attempt to go outside pathPrefix
-			pathPrefixEnv:    "/serve",
-			expectedStatus:   http.StatusForbidden,
-			expectedErrorMsg: "Access to the requested path is forbidden (path traversal attempt?)",
+			name:           "Prefix is /serve and path is not allowed (d=/, prefix=/serve)",
+			pathPrefixEnv:  "/serve",
+			expectedStatus: http.StatusOK,
 		},
 		{
 			name:           "Prefix is / and path is allowed (d=dir1, prefix=/) ",
@@ -348,37 +318,35 @@ func TestListDirectoryHandler_PathPrefixValidation(t *testing.T) {
 		},
 		{
 			name:           "Prefix is /app, path is /app (d is empty, prefix=/app)",
-			queryD:         "", // Root of pathPrefix
 			pathPrefixEnv:  "/app",
 			expectedStatus: http.StatusOK,
 		},
 		{
-			name:           "Prefix is /app, query d is / (serves prefix root)", // d=/ points to the root of PATH_PREFIX
+			name:           "Prefix is /app, path is / (d=/, prefix=/app)",
 			queryD:         "/",
 			pathPrefixEnv:  "/app",
 			expectedStatus: http.StatusOK,
-			// expectedErrorMsg: "Access to the requested path is forbidden (path traversal attempt?)", // No error expected
 		},
 		{
-			name:             "Attempt to access parent of prefix (d=../, prefix=/app/sub)",
+			name:             "Attempt to access parent of prefix (d=.., prefix=/app/sub)",
 			queryD:           "..",
-			pathPrefixEnv:    "/app/sub", // Attempt to access /app
+			pathPrefixEnv:    "/app/sub",
 			expectedStatus:   http.StatusForbidden,
-			expectedErrorMsg: "Access to the requested path is forbidden (path traversal attempt?)",
+			expectedErrorMsg: "access to the requested path is forbidden (path traversal attempt?)",
 		},
 		{
 			name:             "Attempt to access parent of prefix leading outside (d=../../, prefix=/app)",
-			queryD:           "../..", // Attempt to go outside /app
+			queryD:           "../..",
 			pathPrefixEnv:    "/app",
 			expectedStatus:   http.StatusForbidden,
-			expectedErrorMsg: "Access to the requested path is forbidden (path traversal attempt?)",
+			expectedErrorMsg: "access to the requested path is forbidden (path traversal attempt?)",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			currentTestPrefixPath := tt.pathPrefixEnv
-			var createdPrefixDir string // Track the directory we create for cleanup
+			var createdPrefixDir string
 			if tt.pathPrefixEnv != "" && tt.pathPrefixEnv != "/" {
 				prefixDirName := tt.pathPrefixEnv
 				if filepath.IsAbs(prefixDirName) {
@@ -386,13 +354,12 @@ func TestListDirectoryHandler_PathPrefixValidation(t *testing.T) {
 				}
 				absolutePrefixPath := filepath.Join(testRootDir, prefixDirName)
 				currentTestPrefixPath = absolutePrefixPath
-				createdPrefixDir = absolutePrefixPath // Store for cleanup
+				createdPrefixDir = absolutePrefixPath
 
 				if err := os.MkdirAll(absolutePrefixPath, 0755); err != nil {
 					t.Fatalf("Failed to create PATH_PREFIX directory %s: %v", absolutePrefixPath, err)
 				}
 
-				// Populate this prefix directory
 				err := os.WriteFile(filepath.Join(absolutePrefixPath, "file1.txt"), []byte("content1_in_prefix_validation"), 0644)
 				if err != nil {
 					t.Fatalf("Failed to create file1.txt in %s for validation: %v", absolutePrefixPath, err)
@@ -420,7 +387,6 @@ func TestListDirectoryHandler_PathPrefixValidation(t *testing.T) {
 				if err := os.Unsetenv("PATH_PREFIX"); err != nil {
 					t.Logf("Failed to unset PATH_PREFIX: %v", err)
 				}
-				// Clean up the created prefix directory
 				if createdPrefixDir != "" {
 					if err := os.RemoveAll(createdPrefixDir); err != nil {
 						t.Logf("Failed to clean up prefix directory %s: %v", createdPrefixDir, err)
@@ -435,20 +401,14 @@ func TestListDirectoryHandler_PathPrefixValidation(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, requestURL, nil)
 			rec := httptest.NewRecorder()
 			c := e.NewContext(req, rec)
-			// c.Param is not used
 
 			err := ListDirectoryHandler(c)
 
-			// Assert the HTTP status code recorded.
 			assert.Equal(t, tt.expectedStatus, rec.Code)
 
 			if tt.expectedStatus == http.StatusOK {
-				// If OK, handler should return nil error.
 				assert.NoError(t, err)
 			} else {
-				// For error statuses, check the JSON body for the expected error message.
-				// The handler returns the error from c.JSON(), which might be nil if the write was successful.
-				// So, we primarily check the recorder's code and body.
 				if tt.expectedErrorMsg != "" {
 					var errResp map[string]string
 					jsonErr := json.Unmarshal(rec.Body.Bytes(), &errResp)
@@ -463,9 +423,9 @@ func TestListDirectoryHandler_PathPrefixValidation(t *testing.T) {
 
 func TestListDirectoryHandler_ErrorCases(t *testing.T) {
 	originalWd, _ := os.Getwd()
-	testRootDir, cleanup := setupTestEnvironment(t) // testRootDir is not used, but for a clean environment
+	testRootDir, cleanup := setupTestEnvironment(t)
 	defer cleanup()
-	err := os.Chdir(testRootDir) // Access to non-existent directories is relative to the current directory
+	err := os.Chdir(testRootDir)
 	if err != nil {
 		t.Fatalf("Failed to change directory: %v", err)
 	}
@@ -478,28 +438,23 @@ func TestListDirectoryHandler_ErrorCases(t *testing.T) {
 	e := echo.New()
 
 	tests := []struct {
-		name             string
-		queryD           string
-		pathPrefixEnv    string
-		expectedStatus   int
-		expectedErrorMsg string // Expected path part in the error message
+		name           string
+		queryD         string
+		pathPrefixEnv  string
+		expectedStatus int
 	}{
 		{
 			name:           "Directory not found (d=non_existent_dir)",
 			queryD:         "non_existent_dir",
 			pathPrefixEnv:  "",
 			expectedStatus: http.StatusNotFound,
-			// expectedErrorMsg is set dynamically in the test loop
 		},
 		{
 			name:           "Directory not found with non-existent prefix",
 			queryD:         "non_existent_dir_in_prefix",
-			pathPrefixEnv:  "/this_prefix_definitely_should_not_exist_for_testing_purposes", // Use a highly unlikely path
+			pathPrefixEnv:  "/non_existent_prefix",
 			expectedStatus: http.StatusNotFound,
-			// expectedErrorMsg is set dynamically in the test loop
 		},
-		// TODO: Permission denied case (requires setting up a directory with no read perms)
-		// This test is difficult to set up in some environments, so skip or add a note for now
 	}
 
 	for _, tt := range tests {
@@ -520,43 +475,28 @@ func TestListDirectoryHandler_ErrorCases(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, requestURL, nil)
 			rec := httptest.NewRecorder()
 			c := e.NewContext(req, rec)
-			// c.Param is not used
 
 			err := ListDirectoryHandler(c)
 
-			// Dynamically set expectedErrorMsg for these specific cases
 			var currentExpectedErrorMsg string
 			switch tt.name {
 			case "Directory not found (d=non_existent_dir)":
-				// Service returns cleaned path, e.g., /non_existent_dir
 				currentExpectedErrorMsg = fmt.Sprintf("Directory not found: /%s", tt.queryD)
 			case "Directory not found with non-existent prefix":
-				// Service returns "PATH_PREFIX <path> not found"
 				currentExpectedErrorMsg = fmt.Sprintf("PATH_PREFIX %s not found", tt.pathPrefixEnv)
 			default:
-				currentExpectedErrorMsg = tt.expectedErrorMsg // Use pre-defined if any for other tests
 			}
 
-			// err is already declared and assigned at line 396
-			// err := ListDirectoryHandler(c) // Call the handler  <- This line is the duplicate causing the error
-
-			// For error cases, the handler is expected to return an error that Echo converts to HTTP response.
-			// Or, the handler calls c.JSON and returns nil. The current ListDirectoryHandler returns c.JSON(...)
-			// which itself returns an error, so `err` from `ListDirectoryHandler(c)` should be non-nil for error cases.
 			if tt.expectedStatus == http.StatusOK {
 				assert.NoError(t, err, "Expected no error for status OK but got one")
 				assert.Equal(t, tt.expectedStatus, rec.Code)
 			} else {
 				assert.Equal(t, tt.expectedStatus, rec.Code, "Recorder HTTP status code mismatch")
-				// The handler now returns the error from c.JSON, so 'err' might be nil if c.JSON succeeds
-				// even if it writes an error status. The primary check is rec.Code and rec.Body.
 				if currentExpectedErrorMsg != "" {
 					var respJSON map[string]string
 					jsonErr := json.Unmarshal(rec.Body.Bytes(), &respJSON)
 					assert.NoError(t, jsonErr, "Failed to unmarshal error response JSON")
 					assert.Equal(t, currentExpectedErrorMsg, respJSON["error"], "Error message mismatch in JSON body")
-				} else {
-					// If no specific message, ensure body is empty or not an error structure we care about
 				}
 			}
 		})

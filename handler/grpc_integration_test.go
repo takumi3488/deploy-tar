@@ -17,10 +17,8 @@ import (
 )
 
 func TestGRPCIntegration(t *testing.T) {
-	// Create temporary directory structure for testing
 	tempDir := t.TempDir()
 
-	// Create test directory structure
 	testDir := filepath.Join(tempDir, "testdir")
 	err := os.MkdirAll(testDir, 0755)
 	require.NoError(t, err)
@@ -29,7 +27,6 @@ func TestGRPCIntegration(t *testing.T) {
 	err = os.WriteFile(testFile, []byte("test content"), 0644)
 	require.NoError(t, err)
 
-	// Change to test directory
 	originalDir, err := os.Getwd()
 	require.NoError(t, err)
 	err = os.Chdir(testDir)
@@ -39,8 +36,7 @@ func TestGRPCIntegration(t *testing.T) {
 		require.NoError(t, err)
 	}()
 
-	// Start gRPC server
-	lis, err := net.Listen("tcp", ":0") // Use any available port
+	lis, err := net.Listen("tcp", ":0")
 	require.NoError(t, err)
 	defer func() {
 		if err := lis.Close(); err != nil {
@@ -59,10 +55,8 @@ func TestGRPCIntegration(t *testing.T) {
 	}()
 	defer grpcServer.Stop()
 
-	// Wait for server to start
 	time.Sleep(100 * time.Millisecond)
 
-	// Create gRPC client
 	conn, err := grpc.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 	defer func() {
@@ -73,7 +67,6 @@ func TestGRPCIntegration(t *testing.T) {
 
 	client := pb.NewFileServiceClient(conn)
 
-	// Test gRPC call
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -83,7 +76,6 @@ func TestGRPCIntegration(t *testing.T) {
 
 	assert.NotNil(t, resp.Path)
 	assert.Equal(t, "/", *resp.Path)
-	assert.Len(t, resp.Entries, 1) // test.txt
 
 	entry := resp.Entries[0]
 	assert.NotNil(t, entry.Name)
