@@ -2,7 +2,7 @@ version: "0"
 desc: Test gRPC List endpoint
 runners:
   greq:
-    addr: localhost:9090
+    addr: localhost:8081
     tls: false
     protos:
       - ../proto/fileservice/v1/file_service.proto # Corrected protos path
