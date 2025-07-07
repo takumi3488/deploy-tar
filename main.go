@@ -68,16 +68,16 @@ func main() {
 }
 
 func startGRPCServer() {
-	lis, err := net.Listen("tcp", ":9090")
+	lis, err := net.Listen("tcp", ":8081")
 	if err != nil {
-		log.Fatalf("Failed to listen on port 9090: %v", err)
+		log.Fatalf("Failed to listen on port 8081: %v", err)
 	}
 
 	grpcServer := grpc.NewServer()
 	fileService := handler.NewGRPCListDirectoryServer()
 	pb.RegisterFileServiceServer(grpcServer, fileService)
 
-	log.Println("gRPC server listening on :9090")
+	log.Println("gRPC server listening on :8081")
 	if err := grpcServer.Serve(lis); err != nil {
 		log.Fatalf("Failed to serve gRPC server: %v", err)
 	}

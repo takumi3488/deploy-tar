@@ -15,13 +15,13 @@ A simple file upload server that provides both RESTful API and gRPC API to uploa
 ### Starting the Server
 
 ```sh
-docker run -p 8080:8080 -p 9090:9090 -v /path/to/local/dir:/path/to/server/dir ghcr.io/takumi3488/simple-file-uploader:latest
+docker run -p 8080:8080 -p 8081:8081 -v /path/to/local/dir:/path/to/server/dir ghcr.io/takumi3488/simple-file-uploader:latest
 ```
 
 The server runs on two ports:
 
 - **Port 8080**: REST API (HTTP)
-- **Port 9090**: gRPC API
+- **Port 8081**: gRPC API
 
 #### Environment Variables
 
@@ -74,7 +74,7 @@ GET /list # List contents of a directory
 - Success: 200 OK with an HTML page listing the directory contents.
 - Error: 400, 403, 404, or 500 error code with appropriate error message.
 
-#### gRPC API (Port 9090)
+#### gRPC API (Port 8081)
 
 ##### File Service
 
@@ -165,19 +165,19 @@ Example of using the gRPC API with `grpcurl`:
 To list the root directory:
 
 ```bash
-grpcurl -plaintext -d '{}' localhost:9090 fileservice.FileService/ListDirectory
+grpcurl -plaintext -d '{}' localhost:8081 fileservice.FileService/ListDirectory
 ```
 
 To list a subdirectory:
 
 ```bash
-grpcurl -plaintext -d '{"directory": "my_files"}' localhost:9090 fileservice.FileService/ListDirectory
+grpcurl -plaintext -d '{"directory": "my_files"}' localhost:8081 fileservice.FileService/ListDirectory
 ```
 
 To explore the gRPC service definition:
 
 ```bash
-grpcurl -plaintext localhost:9090 describe fileservice.FileService
+grpcurl -plaintext localhost:8081 describe fileservice.FileService
 ```
 
 ## Notes
