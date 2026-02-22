@@ -52,7 +52,7 @@ func main() {
 		e.Use(otelecho.Middleware(serviceName, echoMiddlewareOptions...))
 	}
 
-	e.Use(middleware.Logger())
+	e.Use(middleware.RequestLogger())
 	e.Use(middleware.Recover())
 
 	e.POST("/", handler.UploadHandler)
