@@ -3,10 +3,10 @@ module deploytar
 go 1.25.0
 
 require (
-	github.com/labstack/echo/v4 v4.13.4
+	github.com/labstack/echo/v4 v4.15.0
 	github.com/labstack/echo/v5 v5.0.4
 	github.com/stretchr/testify v1.11.1
-	go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho v0.61.0
+	go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho v0.65.0
 	go.opentelemetry.io/otel v1.40.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.40.0
 	go.opentelemetry.io/otel/sdk v1.40.0
