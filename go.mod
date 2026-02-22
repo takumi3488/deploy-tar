@@ -1,9 +1,10 @@
 module deploytar
 
-go 1.24.2
+go 1.25.0
 
 require (
 	github.com/labstack/echo/v4 v4.13.4
+	github.com/labstack/echo/v5 v5.0.4
 	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho v0.61.0
 	go.opentelemetry.io/otel v1.40.0
@@ -36,7 +37,7 @@ require (
 	golang.org/x/net v0.49.0 // indirect
 	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/text v0.33.0 // indirect
-	golang.org/x/time v0.11.0 // indirect
+	golang.org/x/time v0.14.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260128011058-8636f8732409 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260128011058-8636f8732409 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
