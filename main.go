@@ -5,11 +5,12 @@ import (
 	"deploytar/handler"
 	"log"
 	"net"
+	"net/http"
 	"os"
 
-	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
-	"go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho"
+	"github.com/labstack/echo/v5"
+	"github.com/labstack/echo/v5/middleware"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/propagation"
@@ -38,18 +39,17 @@ func main() {
 			}
 		}()
 		otel.SetTextMapPropagator(propagation.TraceContext{})
-		echoMiddlewareOptions := []otelecho.Option{
-			otelecho.WithTracerProvider(tracerProvider),
-			otelecho.WithPropagators(propagation.TraceContext{}),
-			otelecho.WithSkipper(func(c echo.Context) bool {
-				return c.Request().URL.Path == "/healthz"
-			}),
-		}
 		serviceName := os.Getenv("OTEL_SERVICE_NAME")
 		if serviceName == "" {
 			serviceName = "deploy-tar"
 		}
-		e.Use(otelecho.Middleware(serviceName, echoMiddlewareOptions...))
+		e.Use(echo.WrapMiddleware(otelhttp.NewMiddleware(serviceName,
+			otelhttp.WithTracerProvider(tracerProvider),
+			otelhttp.WithPropagators(propagation.TraceContext{}),
+			otelhttp.WithFilter(func(r *http.Request) bool {
+				return r.URL.Path != "/healthz"
+			}),
+		)))
 	}
 
 	e.Use(middleware.RequestLogger())
@@ -64,7 +64,7 @@ func main() {
 
 	go startGRPCServer()
 
-	e.Logger.Fatal(e.Start(":8080"))
+	log.Fatal(e.Start(":8080"))
 }
 
 func startGRPCServer() {
