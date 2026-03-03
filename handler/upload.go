@@ -7,10 +7,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
-func UploadHandler(c echo.Context) error {
+func UploadHandler(c *echo.Context) error {
 	pathPrefixEnv := os.Getenv("PATH_PREFIX")
 	baseDirPath := c.FormValue("path")
 

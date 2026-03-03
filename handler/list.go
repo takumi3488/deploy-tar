@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 type DirectoryEntry struct {
@@ -25,7 +25,7 @@ type DirectoryResponse struct {
 	ParentLink *string          `json:"parent_link,omitempty"`
 }
 
-func ListDirectoryHandler(c echo.Context) error {
+func ListDirectoryHandler(c *echo.Context) error {
 	rawQuerySubDir := c.QueryParam("d")
 	pathPrefixEnv := os.Getenv("PATH_PREFIX")
 
