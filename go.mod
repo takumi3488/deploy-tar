@@ -3,7 +3,7 @@ module deploytar
 go 1.26.0
 
 require (
-	github.com/labstack/echo/v5 v5.4.2
+	github.com/labstack/echo/v5 v5.4.4
 	github.com/stretchr/testify v1.12.1
 	go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho v0.71.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.72.0
